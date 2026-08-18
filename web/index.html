@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facebook Creator Email Outreach Engine</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    
+    <!-- HEADER -->
+    <header>
+      <div class="logo-group">
+        <div class="logo-icon">📘</div>
+        <div class="logo-text">
+          <h1>Facebook Creator Email Outreach Engine</h1>
+          <p>Autonomous Lead Harvester, DNS/MX Email Verifier & Campaign Manager</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <div id="statusBadge" class="status-badge idle">
+          <span class="status-dot"></span>
+          <span id="statusText">System Idle</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- METRICS DASHBOARD -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>Total Harvested Emails</span>
+          <span>📘</span>
+        </div>
+        <div id="metricTotalEmails" class="metric-value">0</div>
+        <div class="metric-sub">Scraped from Public FB Page Snippets</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>Total Mails Sent</span>
+          <span>📧</span>
+        </div>
+        <div id="metricSentEmails" class="metric-value">0</div>
+        <div class="metric-sub">Outreach Mails Delivered & Logged</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>DNS / MX Verified Emails</span>
+          <span>🛡️</span>
+        </div>
+        <div id="metricVerifiedEmails" class="metric-value">0</div>
+        <div class="metric-sub">Live Socket DNS/MX Host Confirmed</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span>Active FB Creator Leads</span>
+          <span>👥</span>
+        </div>
+        <div id="metricLeadsCount" class="metric-value">0</div>
+        <div class="metric-sub">Live HTTP 200 Verified FB Pages</div>
+      </div>
+    </div>
+
+    <!-- MAIN CONTROL & DATA GRID -->
+    <div class="main-grid">
+      
+      <!-- LEFT SIDEBAR: FACEBOOK EMAIL HARVEST CONTROLS -->
+      <div class="panel">
+        
+        <div class="panel-title">
+          <span>📘 Facebook Email Harvester Controls</span>
+        </div>
+
+        <!-- Start / Stop Harvester Buttons -->
+        <div class="action-group">
+          <button id="btnStart" class="btn btn-primary" onclick="startHarvester()">
+            <span>▶️</span> Start Email Harvester
+          </button>
+          <button id="btnStop" class="btn btn-danger" onclick="stopHarvester()" style="display: none;">
+            <span>⏹️</span> Stop Harvester
+          </button>
+        </div>
+
+        <div class="panel-title" style="margin-top: 10px;">
+          <span>⚙️ Credit & Request Settings</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Search Request Budget (Credit Limit)</label>
+          <input type="number" id="fbRequestBudget" class="input-field" value="100" placeholder="100">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Output Dataset Name</label>
+          <input type="text" id="fbOutputName" class="input-field" value="facebook_100credit_email_leads" placeholder="facebook_email_leads">
+        </div>
+
+        <div class="panel-title" style="margin-top: 10px;">
+          <span>🎯 Target Creator Niches</span>
+        </div>
+
+        <div class="form-group">
+          <div class="checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" checked disabled>
+              <span>✨ Digital & Content Creators</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" checked disabled>
+              <span>💄 Lifestyle, Beauty & Fitness</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" checked disabled>
+              <span>🇺🇸 US Location Verification</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" checked disabled>
+              <span>🛡️ DNS / MX Socket Email Verification</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel-title" style="margin-top: 10px;">
+          <span>📊 Lead Export Actions</span>
+        </div>
+
+        <button class="btn btn-secondary" onclick="exportEmailsCSV()">
+          <span>📥</span> Export Facebook Emails (CSV)
+        </button>
+
+      </div>
+
+      <!-- RIGHT MAIN CONTENT: FACEBOOK CREATOR EMAIL DIRECTORY TABLE -->
+      <div class="panel">
+        
+        <div class="panel-title" style="justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span>📧 Facebook Creator Email Directory & Mail Activity</span>
+          </div>
+          <button class="btn btn-secondary" onclick="loadEmails()" style="padding: 6px 12px; font-size: 12px;">
+            🔄 Refresh Email List
+          </button>
+        </div>
+
+        <!-- Filter Search Bar -->
+        <div class="form-group">
+          <input type="text" id="tableFilterInput" class="input-field" placeholder="Filter by email, creator name, handle, or verification status..." onkeyup="filterTable()">
+        </div>
+
+        <!-- Facebook Emails Table -->
+        <div class="table-container">
+          <table id="facebookEmailTable">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Creator Name & Handle</th>
+                <th>Email Address</th>
+                <th>DNS / MX Status</th>
+                <th>Facebook Page Link</th>
+                <th>Location</th>
+                <th>Sent Date / Action</th>
+              </tr>
+            </thead>
+            <tbody id="facebookTableBody">
+              <tr>
+                <td colspan="7" class="empty-state">Loading Facebook creator email directory...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Controls Bar -->
+        <div class="pagination-bar">
+          <div id="paginationInfo" class="pagination-info">Showing 0 of 0 creator emails</div>
+          <div class="pagination-controls">
+            <label class="page-size-label">
+              <span style="color: var(--text-muted); font-size: 12px;">Per page:</span>
+              <select id="pageSizeSelect" class="input-field select-field" onchange="changePageSize(this.value)">
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <button id="btnPrevPage" class="btn btn-secondary btn-sm" onclick="changePage(-1)">◀ Prev</button>
+            <span id="pageIndicator" class="page-indicator">Page 1 of 1</span>
+            <button id="btnNextPage" class="btn btn-secondary btn-sm" onclick="changePage(1)">Next ▶</button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

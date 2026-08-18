@@ -1,0 +1,22 @@
+# Environment & secrets
+.env
+.env.local
+*.env
+
+# Python cache & build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Sensitive data exports & logs
+Data/
+*.csv
+*.json
+*.xlsx
+!package.json
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/
