@@ -343,6 +343,12 @@ function applyFilterAndRender() {
     return true;
   });
 
+  filteredEmails.sort((a, b) => {
+    const timeA = new Date(a.created_at || a.sent_at || 0).getTime();
+    const timeB = new Date(b.created_at || b.sent_at || 0).getTime();
+    return timeB - timeA;
+  });
+
   renderTable();
 }
 
@@ -371,6 +377,12 @@ function applyPhoneFilterAndRender() {
     if (categoryFilter !== "all" && cat.key !== categoryFilter) return false;
 
     return true;
+  });
+
+  filteredPhones.sort((a, b) => {
+    const timeA = new Date(a.created_at || a.sent_at || 0).getTime();
+    const timeB = new Date(b.created_at || b.sent_at || 0).getTime();
+    return timeB - timeA;
   });
 
   renderPhoneTable();

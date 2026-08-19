@@ -139,7 +139,7 @@ def load_facebook_emails(force_refresh=False):
                     ORDER BY sent_at DESC NULLS LAST
                     LIMIT 1
                 ) el ON TRUE
-                ORDER BY el.sent_at DESC NULLS LAST, e.id DESC
+                ORDER BY COALESCE(el.sent_at, e.created_at) DESC NULLS LAST, e.id DESC
             """)
             db_rows = cur.fetchall()
             cur.close()
@@ -212,7 +212,7 @@ def load_facebook_emails(force_refresh=False):
                 pass
 
     email_list = list(leads_dict.values())
-    email_list.sort(key=lambda x: (0 if x["sent_at"] else 1, x["email"]))
+    email_list.sort(key=lambda x: x.get("sent_at") or x.get("created_at") or "", reverse=True)
 
     sent_count = sum(1 for e in email_list if e.get("sent_at") or "Sent" in str(e.get("status")))
     dns_verified_count = sum(1 for e in email_list if "Valid" in str(e.get("dns_status")) or "Verified" in str(e.get("dns_status")))
