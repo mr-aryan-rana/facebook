@@ -30,7 +30,7 @@ from verifier import verify_us_phone, normalize_unicode_text
 
 load_env()
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "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")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 def extract_and_verify_leads(raw_items: list, verbose: bool = False) -> list:
     """Processes a list of raw search items through OpenAI GPT and returns clean, verified leads."""

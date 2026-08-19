@@ -42,7 +42,7 @@ from env_loader import load_env
 
 load_env()
 
-SERPER_KEY = os.environ.get("SERPER_KEY", "195200a07a4a865521fd5e4aca72c2161ff1a8e0")
+SERPER_KEY = os.environ.get("SERPER_KEY", "")
 SERPER_DAILY_CREDIT_LIMIT = int(os.environ.get("SERPER_DAILY_CREDIT_LIMIT", "60"))
 
 EXCLUDED_KEYWORDS = [
