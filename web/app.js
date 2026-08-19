@@ -13,7 +13,7 @@ let currentPhonePage = 1;
 let pageSize = 25;
 let lastEmailCount = -1;
 let activeTab = "emails";
-let isDryRunMode = true;
+let isDryRunMode = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   loadEmails();

@@ -330,7 +330,7 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
 
             budget = int(body.get("budget", 10))
             niche = body.get("niche", "Love Couple").strip()
-            dry_run = body.get("dry_run", True)
+            dry_run = body.get("dry_run", False)
 
             script_path = FACEBOOK_DIR / "src" / "run_pipeline.py"
             cmd = [sys.executable, str(script_path), "--niche", niche, "--limit", str(budget)]
