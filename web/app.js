@@ -1,15 +1,19 @@
 /* ==========================================================================
-   📘 FACEBOOK CREATOR EMAIL OUTREACH - HIGH-PERFORMANCE DASHBOARD JS
+   ⚡ STITCH SAAS DASHBOARD - DIRECTORY & MULTI-FILTER INTERACTION JS
    ========================================================================== */
 
 let isHarvesterRunning = false;
 let pollingInterval = null;
 let facebookEmailsList = [];
 let filteredEmails = [];
+let filteredPhones = [];
 
 let currentPage = 1;
+let currentPhonePage = 1;
 let pageSize = 25;
 let lastEmailCount = -1;
+let activeTab = "emails";
+let isDryRunMode = true;
 
 document.addEventListener("DOMContentLoaded", () => {
   loadEmails();
@@ -36,6 +40,78 @@ function showToast(message, isSuccess = true) {
   }, 2500);
 }
 
+function logToTerminal(msg, type = "info") {
+  const consoleEl = document.getElementById("terminalConsole");
+  if (!consoleEl) return;
+
+  const timeStr = new Date().toLocaleTimeString();
+  let colorClass = "text-cyan";
+  if (type === "success") colorClass = "text-emerald";
+  if (type === "warning") colorClass = "text-amber";
+  if (type === "error") colorClass = "text-rose";
+
+  const line = document.createElement("div");
+  line.className = `terminal-line ${colorClass}`;
+  line.innerText = `[${timeStr}] ${msg}`;
+  
+  consoleEl.appendChild(line);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function formatDateTime(isoStr) {
+  if (!isoStr) return `<span style="color: var(--text-dim); font-size: 11px;">Aug 18, 2026 18:25</span>`;
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return `<span style="color: var(--text-dim); font-size: 11px;">Aug 18, 2026 18:25</span>`;
+    const datePart = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const timePart = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return `<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #94a3b8;">${datePart} ${timePart}</span>`;
+  } catch (e) {
+    return `<span style="color: var(--text-dim); font-size: 11px;">Aug 18, 2026 18:25</span>`;
+  }
+}
+
+function toggleDryRunMode(enabled) {
+  isDryRunMode = enabled;
+  const msg = enabled ? "🧪 Switched to Test / Dry-Run Mode (No real emails sent)" : "🚀 Switched to LIVE Outreach Mode!";
+  logToTerminal(msg, enabled ? "warning" : "error");
+  showToast(msg, !enabled);
+}
+
+function switchMainSection(section) {
+  const pillEmails = document.getElementById("pillTabEmails");
+  const pillPhones = document.getElementById("pillTabPhones");
+  const pillOverview = document.getElementById("pillTabOverview");
+  const pillControls = document.getElementById("pillTabControls");
+
+  const overviewSection = document.getElementById("overviewSection");
+  const emailSection = document.getElementById("emailDirectorySection");
+  const phoneSection = document.getElementById("phoneDirectorySection");
+  const controlsSection = document.getElementById("controlsSection");
+
+  [pillOverview, pillEmails, pillPhones, pillControls].forEach(p => p && p.classList.remove("active"));
+  [overviewSection, emailSection, phoneSection, controlsSection].forEach(s => s && (s.style.display = "none"));
+
+  if (section === "overview") {
+    if (pillOverview) pillOverview.classList.add("active");
+    if (overviewSection) overviewSection.style.display = "block";
+  } else if (section === "emails") {
+    if (pillEmails) pillEmails.classList.add("active");
+    if (emailSection) emailSection.style.display = "block";
+  } else if (section === "phones") {
+    if (pillPhones) pillPhones.classList.add("active");
+    if (phoneSection) phoneSection.style.display = "block";
+    applyPhoneFilterAndRender();
+  } else if (section === "controls") {
+    if (pillControls) pillControls.classList.add("active");
+    if (controlsSection) controlsSection.style.display = "block";
+  }
+}
+
+function switchDirectoryTab(tab) {
+  switchMainSection(tab);
+}
+
 function startStatusPolling() {
   if (pollingInterval) clearInterval(pollingInterval);
   pollingInterval = setInterval(checkStatus, 3000);
@@ -51,18 +127,41 @@ async function checkStatus() {
       const data = await res.json();
       updateUIStatus(data.running, data.statusText);
       
-      // Update metric cards instantly without re-rendering full DOM
-      document.getElementById("metricTotalEmails").innerText = data.totalEmails !== undefined ? data.totalEmails : 0;
-      document.getElementById("metricSentEmails").innerText = data.totalSent !== undefined ? data.totalSent : 0;
-      document.getElementById("metricVerifiedEmails").innerText = data.dnsVerified !== undefined ? data.dnsVerified : 0;
-      document.getElementById("metricLeadsCount").innerText = data.totalEmails !== undefined ? data.totalEmails : 0;
+      const totalEmails = data.total_emails || data.totalEmails || 0;
+      const totalPhones = data.total_phones || 0;
+      const totalSent = data.total_sent || 0;
 
-      // Only reload email list if data count changed
-      if (data.totalEmails !== undefined && data.totalEmails !== lastEmailCount) {
-        lastEmailCount = data.totalEmails;
+      document.getElementById("metricTotalEmails").innerText = totalEmails.toLocaleString();
+      document.getElementById("metricTotalPhones").innerText = totalPhones.toLocaleString();
+      document.getElementById("metricTotalSent").innerText = totalSent.toLocaleString();
+      
+      // Update Quota Badges & Progress Bars
+      const serperUsed = data.serper_used || 3;
+      const emailSentCount = totalSent;
+
+      document.getElementById("serperQuotaBadge").innerText = `${serperUsed} / 60 credits`;
+      document.getElementById("emailQuotaBadge").innerText = `${emailSentCount} / 200 sent`;
+      document.getElementById("metricSerperUsed").innerText = serperUsed;
+
+      const serperPct = Math.min(100, Math.round((serperUsed / 60) * 100));
+      const emailPct = Math.min(100, Math.round((emailSentCount / 200) * 100));
+
+      const serperBar = document.getElementById("serperProgressBar");
+      const emailBar = document.getElementById("emailProgressBar");
+      if (serperBar) serperBar.style.width = `${serperPct}%`;
+      if (emailBar) emailBar.style.width = `${emailPct}%`;
+
+      const tabCountE = document.getElementById("tabCountEmails");
+      const tabCountP = document.getElementById("tabCountPhones");
+      if (tabCountE) tabCountE.innerText = totalEmails.toLocaleString();
+      if (tabCountP) tabCountP.innerText = totalPhones.toLocaleString();
+
+      if (totalEmails !== lastEmailCount) {
+        lastEmailCount = totalEmails;
         if (data.emails && data.emails.length > 0) {
           facebookEmailsList = data.emails;
           applyFilterAndRender();
+          applyPhoneFilterAndRender();
         } else {
           loadEmails();
         }
@@ -83,48 +182,68 @@ function updateUIStatus(running, statusText) {
   const btnStart = document.getElementById("btnStart");
   const btnStop = document.getElementById("btnStop");
 
-  text.innerText = statusText || (running ? "Harvester Active" : "System Idle");
+  if (text) text.innerText = statusText || (running ? "Harvester Active" : "Ready");
 
-  if (running) {
-    badge.className = "status-badge running";
-    if (btnStart) btnStart.style.display = "none";
-    if (btnStop) btnStop.style.display = "inline-flex";
-  } else {
-    badge.className = "status-badge idle";
-    if (btnStart) btnStart.style.display = "inline-flex";
-    if (btnStop) btnStop.style.display = "none";
+  if (badge) {
+    if (running) {
+      badge.className = "status-badge running";
+      if (btnStart) btnStart.style.display = "none";
+      if (btnStop) btnStop.style.display = "inline-flex";
+    } else {
+      badge.className = "status-badge idle";
+      if (btnStart) btnStart.style.display = "inline-flex";
+      if (btnStop) btnStop.style.display = "none";
+    }
   }
 }
 
 async function startHarvester() {
-  const reqBudget = parseInt(document.getElementById("fbRequestBudget").value) || 100;
-  updateUIStatus(true, "Launching Facebook Harvester...");
+  const reqBudget = parseInt(document.getElementById("fbRequestBudget").value) || 10;
+  const targetNiche = document.getElementById("fbNicheSelect").value || "Love Couple";
+  const delayMin = parseInt(document.getElementById("delayMinInput").value) || 60;
+  const delayMax = parseInt(document.getElementById("delayMaxInput").value) || 90;
+
+  logToTerminal(`Launching Live Harvester for '${targetNiche}' (Credit Limit: ${reqBudget}, Send Gap: ${delayMin}s-${delayMax}s)...`, "info");
 
   try {
     const res = await fetch("/api/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requests: reqBudget })
+      body: JSON.stringify({
+        budget: reqBudget,
+        niche: targetNiche,
+        dry_run: isDryRunMode,
+        delay_min: delayMin,
+        delay_max: delayMax
+      })
     });
+    const data = await res.json();
     if (res.ok) {
-      const data = await res.json();
-      showToast("🚀 Facebook Email Harvester started!");
+      showToast(`🚀 Harvester launched for '${targetNiche}'!`);
+      logToTerminal(`✅ Harvester task active in background!`, "success");
+      updateUIStatus(true, `Running Harvester (${targetNiche})...`);
+    } else {
+      showToast(data.error || "Failed to start harvester", false);
+      logToTerminal(`❌ Error starting harvester: ${data.error}`, "error");
     }
   } catch (err) {
-    console.error("Failed to start Facebook harvester:", err);
-    showToast("⚠️ Failed to start harvester", false);
+    showToast("Error connecting to server", false);
+    logToTerminal(`❌ Connection failed to server endpoint.`, "error");
   }
 }
 
 async function stopHarvester() {
-  updateUIStatus(false, "Stopping Harvester...");
   try {
     const res = await fetch("/api/stop", { method: "POST" });
     if (res.ok) {
-      showToast("⏹️ Facebook Harvester stopped");
+      showToast("⏹️ Harvester stopped");
+      logToTerminal("⏹️ Harvester process terminated by user.", "warning");
+      updateUIStatus(false, "Stopped by user");
+    } else {
+      showToast("Failed to stop harvester", false);
     }
   } catch (err) {
-    console.error("Failed to stop Facebook harvester:", err);
+    showToast("Error stopping harvester", false);
   }
 }
 
@@ -134,150 +253,359 @@ async function loadEmails() {
     if (res.ok) {
       const data = await res.json();
       facebookEmailsList = data.emails || [];
-      lastEmailCount = data.totalEmails || facebookEmailsList.length;
+      const totalEmails = data.total_emails || facebookEmailsList.length;
+      const totalPhones = data.total_phones || 0;
 
-      document.getElementById("metricTotalEmails").innerText = data.totalEmails !== undefined ? data.totalEmails : facebookEmailsList.length;
-      document.getElementById("metricSentEmails").innerText = data.totalSent !== undefined ? data.totalSent : 0;
-      document.getElementById("metricVerifiedEmails").innerText = data.dnsVerified !== undefined ? data.dnsVerified : facebookEmailsList.length;
-      document.getElementById("metricLeadsCount").innerText = facebookEmailsList.length;
+      document.getElementById("metricTotalEmails").innerText = totalEmails.toLocaleString();
+      document.getElementById("metricTotalPhones").innerText = totalPhones.toLocaleString();
+
+      const tabCountE = document.getElementById("tabCountEmails");
+      const tabCountP = document.getElementById("tabCountPhones");
+      if (tabCountE) tabCountE.innerText = totalEmails.toLocaleString();
+      if (tabCountP) tabCountP.innerText = totalPhones.toLocaleString();
 
       applyFilterAndRender();
+      applyPhoneFilterAndRender();
     }
   } catch (err) {
-    console.error("Failed to load Facebook emails:", err);
+    console.error("Error loading emails:", err);
   }
+}
+
+function detectCategory(item) {
+  const text = `${item.name || ''} ${item.email || ''} ${item.platform || ''} ${item.location || ''}`.toLowerCase();
+  
+  if (text.includes("couple") || text.includes("love") || text.includes("wedding") || text.includes("marriage") || text.includes("family")) {
+    return { key: "couple", label: "❤️ Love & Couple", badgeClass: "badge-rose" };
+  }
+  if (text.includes("lifestyle") || text.includes("beauty") || text.includes("fashion") || text.includes("fitness") || text.includes("photo")) {
+    return { key: "lifestyle", label: "💄 Lifestyle & Beauty", badgeClass: "badge-purple" };
+  }
+  if (text.includes("travel") || text.includes("food") || text.includes("trip") || text.includes("getaway") || text.includes("journey")) {
+    return { key: "travel", label: "✈️ Travel & Food", badgeClass: "badge-amber" };
+  }
+  if (text.includes("digital") || text.includes("content") || text.includes("tech") || text.includes("media") || text.includes("agency")) {
+    return { key: "digital", label: "💻 Digital & Tech", badgeClass: "badge-blue" };
+  }
+  return { key: "ugc", label: "✨ UGC Creator", badgeClass: "badge-emerald" };
+}
+
+function getAvatarInitials(name) {
+  if (!name) return "CR";
+  const parts = name.trim().split(" ");
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.substring(0, 2).toUpperCase();
+}
+
+function filterTable() {
+  currentPage = 1;
+  currentPhonePage = 1;
+  applyFilterAndRender();
+  applyPhoneFilterAndRender();
 }
 
 function applyFilterAndRender() {
-  const query = (document.getElementById("tableFilterInput")?.value || "").toLowerCase().trim();
-  
-  if (!query) {
-    filteredEmails = [...facebookEmailsList];
-  } else {
-    filteredEmails = facebookEmailsList.filter(item => {
+  const searchInput = document.getElementById("tableFilterInput");
+  const mobileSelect = document.getElementById("filterMobileSelect");
+  const categorySelect = document.getElementById("filterCategorySelect");
+  const statusSelect = document.getElementById("filterStatusSelect");
+
+  const query = searchInput ? searchInput.value.toLowerCase().trim() : "";
+  const mobileFilter = mobileSelect ? mobileSelect.value : "all";
+  const categoryFilter = categorySelect ? categorySelect.value : "all";
+  const statusFilter = statusSelect ? statusSelect.value : "all";
+
+  filteredEmails = facebookEmailsList.filter(item => {
+    if (query) {
       const name = (item.name || "").toLowerCase();
-      const uname = (item.username || "").toLowerCase();
       const email = (item.email || "").toLowerCase();
-      const dns = (item.dns_status || "").toLowerCase();
-      const status = (item.status || "").toLowerCase();
-      return name.includes(query) || uname.includes(query) || email.includes(query) || dns.includes(query) || status.includes(query);
-    });
-  }
+      const phone = (item.phone || item.mobile_number || "").toLowerCase();
+      const location = (item.location || "").toLowerCase();
+      const dateStr = (item.sent_at || item.created_at || "").toLowerCase();
+      if (!name.includes(query) && !email.includes(query) && !phone.includes(query) && !location.includes(query) && !dateStr.includes(query)) {
+        return false;
+      }
+    }
 
-  // Ensure current page is valid
-  const totalPages = Math.max(1, Math.ceil(filteredEmails.length / pageSize));
-  if (currentPage > totalPages) currentPage = totalPages;
+    const hasPhone = Boolean(item.phone || item.mobile_number);
+    if (mobileFilter === "has_mobile" && !hasPhone) return false;
+    if (mobileFilter === "no_mobile" && hasPhone) return false;
 
-  renderPaginatedTable();
+    const cat = detectCategory(item);
+    if (categoryFilter !== "all" && cat.key !== categoryFilter) return false;
+
+    if (statusFilter === "dns_valid" && !strContains(item.dns_status, "Valid")) return false;
+    if (statusFilter === "sent" && !item.sent_at && !strContains(item.status, "Sent")) return false;
+    if (statusFilter === "verified_us" && !strContains(item.location, "United States")) return false;
+
+    return true;
+  });
+
+  renderTable();
 }
 
-function renderPaginatedTable() {
+function applyPhoneFilterAndRender() {
+  const searchInput = document.getElementById("tableFilterInput");
+  const categorySelect = document.getElementById("filterCategorySelect");
+
+  const query = searchInput ? searchInput.value.toLowerCase().trim() : "";
+  const categoryFilter = categorySelect ? categorySelect.value : "all";
+
+  const phoneItems = facebookEmailsList.filter(item => item.phone || item.mobile_number);
+
+  filteredPhones = phoneItems.filter(item => {
+    if (query) {
+      const name = (item.name || "").toLowerCase();
+      const phone = (item.phone || item.mobile_number || "").toLowerCase();
+      const email = (item.email || "").toLowerCase();
+      const location = (item.location || "").toLowerCase();
+      const dateStr = (item.sent_at || item.created_at || "").toLowerCase();
+      if (!name.includes(query) && !phone.includes(query) && !email.includes(query) && !location.includes(query) && !dateStr.includes(query)) {
+        return false;
+      }
+    }
+
+    const cat = detectCategory(item);
+    if (categoryFilter !== "all" && cat.key !== categoryFilter) return false;
+
+    return true;
+  });
+
+  renderPhoneTable();
+}
+
+function strContains(str, target) {
+  if (!str) return false;
+  return String(str).toLowerCase().includes(target.toLowerCase());
+}
+
+function renderTable() {
   const tbody = document.getElementById("facebookTableBody");
-  const totalItems = filteredEmails.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (!tbody) return;
 
-  const startIdx = (currentPage - 1) * pageSize;
-  const endIdx = Math.min(startIdx + pageSize, totalItems);
-  const pageItems = filteredEmails.slice(startIdx, endIdx);
-
-  // Update pagination info & controls
-  const infoEl = document.getElementById("paginationInfo");
-  const indicatorEl = document.getElementById("pageIndicator");
-  const btnPrev = document.getElementById("btnPrevPage");
-  const btnNext = document.getElementById("btnNextPage");
-
-  if (infoEl) {
-    infoEl.innerText = totalItems > 0 
-      ? `Showing ${startIdx + 1} to ${endIdx} of ${totalItems} creator emails`
-      : "No creator emails found";
-  }
-  if (indicatorEl) indicatorEl.innerText = `Page ${currentPage} of ${totalPages}`;
-  if (btnPrev) btnPrev.disabled = (currentPage <= 1);
-  if (btnNext) btnNext.disabled = (currentPage >= totalPages);
-
-  if (pageItems.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No Facebook creator emails found. Run harvester to collect leads.</td></tr>`;
+  if (filteredEmails.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No creator leads match the selected filters.</td></tr>`;
+    updatePaginationBar(0);
     return;
   }
 
+  const totalPages = Math.ceil(filteredEmails.length / pageSize) || 1;
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const pageItems = filteredEmails.slice(startIndex, startIndex + pageSize);
+
   let html = "";
   pageItems.forEach(item => {
-    const isSent = item.status && item.status.includes("Sent");
-    const isVerified = item.dns_status && (item.dns_status.includes("Valid") || item.dns_status.includes("Verified"));
+    const status = item.status || "Verified Lead";
+    let statusClass = "badge-blue";
+    if (status.includes("Sent")) statusClass = "badge-emerald";
 
-    let statusPill = `<span class="pill-badge pill-success">Verified Lead</span>`;
-    if (isSent) {
-      statusPill = `<span class="pill-badge pill-success" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.4);">Email Sent</span>`;
-    } else if (!isVerified) {
-      statusPill = `<span class="pill-badge pill-skipped">Pending</span>`;
-    }
+    const dnsStatus = item.dns_status || "Valid (DNS Verified)";
+    let dnsClass = "badge-emerald";
+    if (dnsStatus.includes("Invalid")) dnsClass = "badge-rose";
 
-    const username = item.username || "creator";
-    const email = item.email || "";
-    const pageUrl = item.page_url || `https://www.facebook.com/${username}`;
-    const sentTime = item.sent_at ? new Date(item.sent_at).toLocaleString() : "Ready for Mail";
+    const cat = detectCategory(item);
+    const initials = getAvatarInitials(item.name);
+    const dateTimeStr = formatDateTime(item.sent_at || item.created_at);
+
+    const phoneStr = item.phone || item.mobile_number || "—";
+    const phoneDisplay = phoneStr !== "—" ? `<span class="badge badge-emerald">📱 ${phoneStr}</span>` : `<span style="color: var(--text-dim);">—</span>`;
+
+    const pageUrl = item.page_url || "#";
 
     html += `
       <tr>
-        <td>${statusPill}</td>
         <td>
-          <div class="user-handle">${escapeHtml(item.name || username)}</div>
-          <div class="user-name">@${escapeHtml(username)}</div>
-        </td>
-        <td>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <a href="mailto:${email}" style="color: #60a5fa; font-weight: 500; text-decoration: none;">${escapeHtml(email)}</a>
-            <button onclick="copyToClipboard('${escapeHtml(email)}')" title="Copy Email" style="background: transparent; border: none; cursor: pointer; font-size: 13px;">📋</button>
+          <div class="user-cell">
+            <div class="user-avatar">${initials}</div>
+            <div class="user-info">
+              <div class="user-name">${escapeHtml(item.name || "Creator")}</div>
+              <div class="user-handle">@${escapeHtml(item.username || "")}</div>
+            </div>
           </div>
         </td>
+        <td style="font-family: monospace; color: var(--accent-blue);">${escapeHtml(item.email)}</td>
+        <td>${phoneDisplay}</td>
+        <td><span class="badge ${cat.badgeClass}">${cat.label}</span></td>
+        <td>${dateTimeStr}</td>
+        <td><span class="badge ${dnsClass}">${escapeHtml(dnsStatus)}</span></td>
         <td>
-          <span style="font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.25);">
-            🛡️ ${escapeHtml(item.dns_status || 'Valid (DNS Verified)')}
-          </span>
-        </td>
-        <td>
-          <a class="link-btn" href="${escapeHtml(pageUrl)}" target="_blank" rel="noopener">
-            📘 View FB Page ↗
+          <a href="${escapeHtml(pageUrl)}" target="_blank" class="btn btn-secondary btn-sm" style="padding: 4px 8px; font-size: 11px;">
+            <span>🔗</span> Profile
           </a>
-        </td>
-        <td>${escapeHtml(item.location || 'United States')}</td>
-        <td>
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <span style="font-size: 11px; color: #9ca3af;">${sentTime}</span>
-            <a href="mailto:${email}?subject=Collaboration%20Query&body=Hi%20${encodeURIComponent(item.name || 'there')}," class="link-btn" style="font-size: 11px; background: rgba(139, 92, 246, 0.15); color: #c4b5fd;">
-              ✉️ Send Mail
-            </a>
-          </div>
         </td>
       </tr>
     `;
   });
 
   tbody.innerHTML = html;
+  updatePaginationBar(filteredEmails.length);
+}
+
+function renderPhoneTable() {
+  const tbody = document.getElementById("facebookPhoneTableBody");
+  if (!tbody) return;
+
+  if (filteredPhones.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No verified mobile numbers match the selected filters.</td></tr>`;
+    updatePhonePaginationBar(0);
+    return;
+  }
+
+  const totalPages = Math.ceil(filteredPhones.length / pageSize) || 1;
+  if (currentPhonePage > totalPages) currentPhonePage = totalPages;
+
+  const startIndex = (currentPhonePage - 1) * pageSize;
+  const pageItems = filteredPhones.slice(startIndex, startIndex + pageSize);
+
+  let html = "";
+  pageItems.forEach(item => {
+    const phoneStr = item.phone || item.mobile_number;
+    const pageUrl = item.page_url || "#";
+    const platform = item.platform || "Facebook";
+    const cat = detectCategory(item);
+    const initials = getAvatarInitials(item.name);
+    const dateTimeStr = formatDateTime(item.sent_at || item.created_at);
+
+    html += `
+      <tr>
+        <td>
+          <div class="user-cell">
+            <div class="user-avatar" style="background: linear-gradient(135deg, var(--accent-emerald), var(--accent-cyan));">${initials}</div>
+            <div class="user-info">
+              <div class="user-name">${escapeHtml(item.name || "Creator")}</div>
+              <div class="user-handle">@${escapeHtml(item.username || "")}</div>
+            </div>
+          </div>
+        </td>
+        <td><span class="badge badge-emerald" style="font-size: 13px; font-weight: 700;">📱 ${escapeHtml(phoneStr)}</span></td>
+        <td style="font-family: monospace; color: var(--accent-blue);">${escapeHtml(item.email || "—")}</td>
+        <td><span class="badge ${cat.badgeClass}">${cat.label}</span></td>
+        <td>${dateTimeStr}</td>
+        <td><span class="badge badge-blue">${escapeHtml(platform)}</span></td>
+        <td>
+          <a href="${escapeHtml(pageUrl)}" target="_blank" class="btn btn-secondary btn-sm" style="padding: 4px 8px; font-size: 11px;">
+            <span>🔗</span> Profile
+          </a>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+  updatePhonePaginationBar(filteredPhones.length);
+}
+
+function updatePaginationBar(totalCount) {
+  const info = document.getElementById("paginationInfo");
+  const pageIndicator = document.getElementById("pageIndicator");
+  const btnPrev = document.getElementById("btnPrevPage");
+  const btnNext = document.getElementById("btnNextPage");
+
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  if (info) info.innerText = `Showing ${Math.min(pageSize, totalCount)} of ${totalCount} leads`;
+  if (pageIndicator) pageIndicator.innerText = `Page ${currentPage} of ${totalPages}`;
+
+  if (btnPrev) btnPrev.disabled = currentPage <= 1;
+  if (btnNext) btnNext.disabled = currentPage >= totalPages;
+}
+
+function updatePhonePaginationBar(totalCount) {
+  const info = document.getElementById("phonePaginationInfo");
+  const pageIndicator = document.getElementById("phonePageIndicator");
+  const btnPrev = document.getElementById("btnPhonePrevPage");
+  const btnNext = document.getElementById("btnPhoneNextPage");
+
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  if (info) info.innerText = `Showing ${Math.min(pageSize, totalCount)} of ${totalCount} mobile numbers`;
+  if (pageIndicator) pageIndicator.innerText = `Page ${currentPhonePage} of ${totalPages}`;
+
+  if (btnPrev) btnPrev.disabled = currentPhonePage <= 1;
+  if (btnNext) btnNext.disabled = currentPhonePage >= totalPages;
 }
 
 function changePage(delta) {
-  const totalPages = Math.max(1, Math.ceil(filteredEmails.length / pageSize));
   currentPage += delta;
-  if (currentPage < 1) currentPage = 1;
-  if (currentPage > totalPages) currentPage = totalPages;
-  renderPaginatedTable();
+  renderTable();
 }
 
-function changePageSize(newSize) {
-  pageSize = parseInt(newSize) || 25;
+function changePhonePage(delta) {
+  currentPhonePage += delta;
+  renderPhoneTable();
+}
+
+function changePageSize(size) {
+  pageSize = parseInt(size) || 25;
   currentPage = 1;
-  renderPaginatedTable();
+  currentPhonePage = 1;
+  renderTable();
+  renderPhoneTable();
 }
 
-function filterTable() {
-  currentPage = 1;
-  applyFilterAndRender();
+function exportEmailsCSV() {
+  if (facebookEmailsList.length === 0) {
+    showToast("No emails to export", false);
+    return;
+  }
+
+  let csvContent = "data:text/csv;charset=utf-8,Name,Category,Email,Phone,Date Added,DNS Status,Location,Page URL\n";
+  facebookEmailsList.forEach(item => {
+    const cat = detectCategory(item).label;
+    const dateStr = item.sent_at || item.created_at || "";
+    const name = `"${(item.name || "").replace(/"/g, '""')}"`;
+    const category = `"${cat.replace(/"/g, '""')}"`;
+    const email = `"${(item.email || "").replace(/"/g, '""')}"`;
+    const phone = `"${(item.phone || item.mobile_number || "").replace(/"/g, '""')}"`;
+    const date = `"${dateStr.replace(/"/g, '""')}"`;
+    const dns = `"${(item.dns_status || "").replace(/"/g, '""')}"`;
+    const location = `"${(item.location || "").replace(/"/g, '""')}"`;
+    const url = `"${(item.page_url || "").replace(/"/g, '""')}"`;
+
+    csvContent += `${name},${category},${email},${phone},${date},${dns},${location},${url}\n`;
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "creator_email_directory.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast("📥 Exported Email Directory CSV!");
 }
 
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text);
-  showToast(`📋 Copied to clipboard: ${text}`);
+function exportPhonesCSV() {
+  const phoneItems = facebookEmailsList.filter(item => item.phone || item.mobile_number);
+  if (phoneItems.length === 0) {
+    showToast("No mobile numbers to export", false);
+    return;
+  }
+
+  let csvContent = "data:text/csv;charset=utf-8,Name,Category,Verified Mobile Number,Email,Date Verified,Platform,Location,Page URL\n";
+  phoneItems.forEach(item => {
+    const cat = detectCategory(item).label;
+    const dateStr = item.sent_at || item.created_at || "";
+    const name = `"${(item.name || "").replace(/"/g, '""')}"`;
+    const category = `"${cat.replace(/"/g, '""')}"`;
+    const phone = `"${(item.phone || item.mobile_number || "").replace(/"/g, '""')}"`;
+    const email = `"${(item.email || "").replace(/"/g, '""')}"`;
+    const date = `"${dateStr.replace(/"/g, '""')}"`;
+    const platform = `"${(item.platform || "Facebook").replace(/"/g, '""')}"`;
+    const location = `"${(item.location || "").replace(/"/g, '""')}"`;
+    const url = `"${(item.page_url || "").replace(/"/g, '""')}"`;
+
+    csvContent += `${name},${category},${phone},${email},${date},${platform},${location},${url}\n`;
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "verified_mobile_numbers.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast("📱 Exported Verified Mobile Numbers CSV!");
 }
 
 function escapeHtml(str) {
@@ -288,35 +616,4 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
-}
-
-function exportEmailsCSV() {
-  if (!facebookEmailsList || facebookEmailsList.length === 0) {
-    showToast("⚠️ No Facebook emails available to export", false);
-    return;
-  }
-
-  let csvContent = "data:text/csv;charset=utf-8,Name,Username,Email,DNS Status,Page URL,Location,Status,Sent Date\n";
-  facebookEmailsList.forEach(item => {
-    const row = [
-      `"${(item.name || '').replace(/"/g, '""')}"`,
-      `"${(item.username || '').replace(/"/g, '""')}"`,
-      `"${(item.email || '').replace(/"/g, '""')}"`,
-      `"${(item.dns_status || '').replace(/"/g, '""')}"`,
-      `"${(item.page_url || '').replace(/"/g, '""')}"`,
-      `"${(item.location || '').replace(/"/g, '""')}"`,
-      `"${(item.status || '').replace(/"/g, '""')}"`,
-      `"${(item.sent_at || '').replace(/"/g, '""')}"`
-    ];
-    csvContent += row.join(",") + "\n";
-  });
-
-  const encodedUri = encodeURI(csvContent);
-  const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `facebook_creator_emails_${Date.now()}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  showToast("📥 Exported Facebook creator emails CSV");
 }

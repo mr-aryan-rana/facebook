@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 from urllib.parse import quote
 from curl_cffi import requests
 from verifier import verify_email_dns, verify_us_phone, EMAIL_REGEX, PHONE_REGEX
+from us_locations import AREA_CODE_TO_STATE, MAJOR_US_CITIES
 
 import os
 from pathlib import Path
@@ -43,6 +44,64 @@ SEARCH_USER_AGENTS = [
 ]
 
 INSTA_CACHE: Dict[str, str] = {}
+
+# Location confirmation. Previously extract_lead_from_snippet hardcoded
+# "location": "United States" on every lead regardless of what the page
+# actually said -- these patterns are the real signal this was ported
+# from run_creator_us_harvest.py, which had it but wasn't wired into the
+# shared extractor every harvester actually uses.
+US_STATE_ABBR = (
+    "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|"
+    "NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
+)
+# Facebook page titles commonly render as "Page Name | City ST" (pipe
+# delimiter, no comma) rather than the "City, ST" comma form -- match both.
+CITY_STATE_RE = re.compile(r"[,|]\s*([A-Z][a-zA-Z.\s]{2,25}?)[,\s]+(" + US_STATE_ABBR + r")\b")
+US_TEXT_RE = re.compile(r"\b(usa|u\.s\.a\.|united states)\b", re.IGNORECASE)
+
+NON_US_LOCATION_KEYWORDS = [
+    "nigeria", "lagos", "ogbomoso", "kenya", "ruiru", "cape town", "mafikeng",
+    "south africa", "ghana", "accra", "trinidad", "philippines", "manila",
+    "india", "pakistan", "bangladesh", "indonesia", "malaysia", "vietnam",
+    "united kingdom", " uk ", "london", "canada", "toronto", "ontario",
+    "australia", "sydney", "brazil", "mexico", "dubai", "uae", "egypt",
+    "johannesburg", "tripoli", "kampala",
+]
+
+
+def detect_location(text: str, area_code: str = "") -> str:
+    """Best-effort location confirmation, checked in order of reliability:
+      1. Explicit "City, ST" / "City | ST" pattern in the text
+      2. Phone area code (already regex-matched AND verified by
+         verify_us_phone) cross-referenced against the real NANP
+         area-code-to-state table -- more reliable than free-text
+         matching since it's tied to a verified phone number, not a
+         string that happens to appear on the page
+      3. A curated, state-qualified list of major US cities with no
+         well-known non-US namesake (see us_locations.py for why a full
+         "all cities" list would hurt rather than help here)
+      4. A generic USA/United States text mention
+    Returns "Non-US" when a known non-US country/city is named, or
+    "Unconfirmed" when there's no real signal either way -- never
+    silently defaults to "United States"."""
+    low = text.lower()
+    if any(k in low for k in NON_US_LOCATION_KEYWORDS):
+        return "Non-US"
+
+    m = CITY_STATE_RE.search(text)
+    if m:
+        return f"{m.group(1).strip()}, {m.group(2)}"
+
+    if area_code and area_code in AREA_CODE_TO_STATE:
+        return f"United States ({AREA_CODE_TO_STATE[area_code]}, via phone area code)"
+
+    for city_name, state in MAJOR_US_CITIES.items():
+        if city_name in low:
+            return f"{city_name.title()}, {state}"
+
+    if US_TEXT_RE.search(text):
+        return "United States"
+    return "Unconfirmed"
 
 TEL_HREF_REGEX = re.compile(r"tel:([+0-9()\-.\s]{7,20})", re.IGNORECASE)
 
@@ -343,6 +402,12 @@ class FacebookExtractor:
         phone_val = formatted_phone if has_phone else ""
         email_val = verified_email if verified_email else ""
         dns_status_val = dns_status if verified_email else "N/A"
+        # Deliberately excludes page_html here, same reasoning as the news/
+        # gov exclusion check above: a real Facebook page's full HTML
+        # contains unrelated boilerplate (language-switcher links, friend/
+        # page suggestions mentioning other cities) that reliably produces
+        # false "Non-US" matches regardless of the page's actual location.
+        location_val = detect_location(f"{title_html} {full_html}", area_code=area_code if has_phone else "")
 
         return {
             "username": username,
@@ -353,7 +418,7 @@ class FacebookExtractor:
             "email": email_val,
             "email_dns_verified": dns_status_val,
             "area_code": area_code if has_phone else "N/A",
-            "location": "United States",
+            "location": location_val,
             "page_url": page_url,
             "status": "Verified Real Live FB Page"
         }

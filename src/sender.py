@@ -143,8 +143,19 @@ def send_campaign(campaign_id: int, requests_limit: int | None = None) -> dict:
         if not campaign:
             return {"error": f"campaign {campaign_id} not found"}
 
+        # Confirmed-US location gate: requires either a specific "City, ST"
+        # match (contains a comma) or the phone-area-code cross-reference
+        # (contains "via phone area code") from extractor.detect_location().
+        # Deliberately excludes bare "United States" -- that string is also
+        # what every pre-fix scrape wrote for every single lead regardless
+        # of truth, so it isn't trustworthy as a real "confirmed" signal.
+        # Set REQUIRE_CONFIRMED_US_LOCATION=false in .env.local to disable.
+        location_filter_sql = ""
+        if os.environ.get("REQUIRE_CONFIRMED_US_LOCATION", "true").lower() != "false":
+            location_filter_sql = "AND (c.location LIKE '%%,%%' OR c.location LIKE '%%via phone area code%%')"
+
         cur.execute(
-            """
+            f"""
             SELECT e.id, e.address, c.name AS creator_name
             FROM emails e
             LEFT JOIN creators c ON e.creator_id = c.id
@@ -152,6 +163,7 @@ def send_campaign(campaign_id: int, requests_limit: int | None = None) -> dict:
               AND e.unsubscribed IS NOT TRUE
               AND COALESCE(c.platform, '') ILIKE %s
               AND e.id NOT IN (SELECT email_id FROM email_logs WHERE campaign_id = %s)
+              {location_filter_sql}
             ORDER BY e.id
             LIMIT %s
             """,

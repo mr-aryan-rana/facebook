@@ -5,8 +5,8 @@
 =============================================================================
 Serves the Facebook web dashboard (facebook/web/index.html) and provides REST API:
   • GET  /api/status       - Returns Facebook harvester running state, email counts, and leads list
-  • GET  /api/emails       - Returns full list of scraped & real DB Facebook creator emails
-  • POST /api/start        - Launches Facebook email harvester in background
+  • GET  /api/emails       - Returns full list of scraped & real DB Facebook creator emails & mobile numbers
+  • POST /api/start        - Launches Facebook email harvester in background with dynamic UI niche & budget
   • POST /api/stop         - Terminates active Facebook harvester process
   • POST /api/campaigns    - Creates/updates an email campaign (subject/body spintax templates)
   • POST /api/send/run     - Starts sending a campaign to Facebook leads in the background
@@ -92,7 +92,10 @@ def load_facebook_emails(force_refresh=False):
                     e.is_valid,
                     v.reason as validation_reason,
                     el.status as log_status,
-                    el.sent_at
+                    el.sent_at,
+                    c.phone,
+                    c.location,
+                    e.created_at
                 FROM emails e
                 LEFT JOIN creators c ON e.creator_id = c.id
                 LEFT JOIN validations v ON e.id = v.email_id
@@ -104,7 +107,7 @@ def load_facebook_emails(force_refresh=False):
             conn.close()
 
             for r in db_rows:
-                email_id, email, name, platform, profile_url, is_valid, reason, log_status, sent_at = r
+                email_id, email, name, platform, profile_url, is_valid, reason, log_status, sent_at, phone, location, created_at = r
                 if not email or "@" not in email or "example.com" in email:
                     continue
                 
@@ -121,11 +124,15 @@ def load_facebook_emails(force_refresh=False):
                     "name": name or uname,
                     "username": uname,
                     "email": email,
+                    "phone": phone or None,
+                    "mobile_number": phone or None,
+                    "platform": platform or "Facebook",
                     "dns_status": dns_str,
                     "page_url": profile_url or f"https://www.facebook.com/{uname}",
-                    "location": "United States",
+                    "location": location or "United States",
                     "status": status_str,
-                    "sent_at": sent_at.isoformat() if sent_at else None
+                    "sent_at": sent_at.isoformat() if sent_at else None,
+                    "created_at": created_at.isoformat() if created_at else None
                 }
         except Exception as ex:
             print(f"⚠️ Error querying real database: {ex}")
@@ -134,7 +141,7 @@ def load_facebook_emails(force_refresh=False):
     fb_data_dir = FACEBOOK_DIR / "Data"
     if fb_data_dir.exists():
         for fpath in fb_data_dir.glob("*.json"):
-            if fpath.name.startswith("SYNTHETIC_"):
+            if fpath.name.startswith("SYNTHETIC_") or fpath.name == "serper_credit_usage.json":
                 continue
             try:
                 with open(fpath, encoding="utf-8") as f:
@@ -146,16 +153,21 @@ def load_facebook_emails(force_refresh=False):
                             email = item.get("email", "").strip().lower()
                             if email and "@" in email and "example.com" not in email and "facebook.com" not in email:
                                 uname = item.get("username", "") or email.split("@")[0]
+                                phone = item.get("mobile_number") or item.get("phone")
                                 if email not in leads_dict:
                                     leads_dict[email] = {
                                         "name": item.get("name", uname),
                                         "username": uname,
                                         "email": email,
+                                        "phone": phone or None,
+                                        "mobile_number": phone or None,
+                                        "platform": item.get("platform", "Facebook"),
                                         "dns_status": item.get("email_dns_verified", "Valid (DNS Verified)"),
                                         "page_url": item.get("page_url") or f"https://www.facebook.com/{uname}",
                                         "location": item.get("location", "United States"),
                                         "status": item.get("status", "Verified FB Creator"),
-                                        "sent_at": None
+                                        "sent_at": None,
+                                        "created_at": item.get("created_at") or None
                                     }
             except Exception:
                 pass
@@ -165,9 +177,11 @@ def load_facebook_emails(force_refresh=False):
 
     sent_count = sum(1 for e in email_list if e.get("sent_at") or "Sent" in str(e.get("status")))
     dns_verified_count = sum(1 for e in email_list if "Valid" in str(e.get("dns_status")) or "Verified" in str(e.get("dns_status")))
+    phone_count = sum(1 for e in email_list if e.get("phone") or e.get("mobile_number"))
 
     CACHED_FB_DATA = {
         "total_emails": len(email_list),
+        "total_phones": phone_count,
         "total_sent": max(total_db_sent, sent_count),
         "dns_verified": dns_verified_count,
         "emails": email_list
@@ -198,167 +212,110 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         clean_path = parsed.path
-        if clean_path.endswith("/") and len(clean_path) > 1:
-            clean_path = clean_path[:-1]
 
-        print(f"DEBUG do_GET path={self.path!r} clean_path={clean_path!r}")
+        if clean_path == "/api/status":
+            running = (FB_PROCESS is not None and FB_PROCESS.poll() is None)
+            data = load_facebook_emails()
+            data["running"] = running
+            data["statusText"] = FB_STATUS if running else "System Ready"
+            self._send_json(data)
+            return
 
-        is_running = FB_PROCESS is not None and FB_PROCESS.poll() is None
-        if not is_running and FB_PROCESS is not None:
-            FB_PROCESS = None
-            FB_STATUS = "Idle"
+        if clean_path == "/api/emails":
+            data = load_facebook_emails(force_refresh=True)
+            self._send_json(data)
+            return
 
         if clean_path == "/unsubscribe":
-            qs = parse_qs(parsed.query)
+            params = parse_qs(parsed.query)
+            raw_id = (params.get("email_id") or [""])[0]
+            token = (params.get("token") or [""])[0]
             try:
-                email_id = int(qs.get("email_id", [""])[0])
+                email_id = int(raw_id)
             except ValueError:
-                email_id = None
-            token = qs.get("token", [""])[0]
-
-            if email_id is None or not verify_token(email_id, token):
-                self._send_html("<p>Invalid or expired unsubscribe link.</p>", status=400)
+                self._send_html("<h2>Invalid unsubscribe link parameters.</h2>", 400)
                 return
 
-            fb_sender.unsubscribe(email_id)
-            self._send_html("<p>You have been unsubscribed and will not receive further emails.</p>")
-            return
+            if not verify_token(email_id, token):
+                self._send_html("<h2>Invalid or tampered unsubscribe token.</h2>", 403)
+                return
 
-        if clean_path in ("/api/send/status", "/api/facebook/send/status"):
-            self._send_json({
-                "running": SEND_THREAD is not None and SEND_THREAD.is_alive(),
-                "statusText": SEND_STATUS,
-                "lastResult": SEND_RESULT,
-            })
-            return
+            conn = get_postgres_conn()
+            if not conn:
+                self._send_html("<h2>Database temporary connection issue. Please retry.</h2>", 503)
+                return
 
-        if clean_path in ("/api/status", "/api/facebook/status"):
-            fb_data = load_facebook_emails()
-            self._send_json({
-                "running": is_running,
-                "statusText": FB_STATUS if is_running else "System Idle",
-                "totalEmails": fb_data["total_emails"],
-                "totalSent": fb_data["total_sent"],
-                "dnsVerified": fb_data["dns_verified"]
-            })
-            return
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE emails SET unsubscribed = TRUE, unsubscribed_at = NOW() WHERE id = %s RETURNING address",
+                    (email_id,)
+                )
+                row = cur.fetchone()
+                conn.commit()
+                cur.close()
+                conn.close()
 
-        elif clean_path in ("/api/emails", "/api/facebook/emails"):
-            fb_data = load_facebook_emails()
-            self._send_json({
-                "running": is_running,
-                "statusText": FB_STATUS if is_running else "System Idle",
-                "totalEmails": fb_data["total_emails"],
-                "totalSent": fb_data["total_sent"],
-                "dnsVerified": fb_data["dns_verified"],
-                "emails": fb_data["emails"]
-            })
-            return
+                addr = row[0] if row else "your email address"
+                self._send_html(
+                    f"<html><head><title>Unsubscribed</title><style>body{{font-family:sans-serif;padding:40px;background:#0b0f19;color:#fff;text-align:center;}}</style></head><body><h1>Unsubscribed Successfully</h1><p><b>{addr}</b> has been permanently unsubscribed from MakeAble outreach campaigns.</p></body></html>"
+                )
+                return
+            except Exception as ex:
+                self._send_html(f"<h2>Error processing unsubscribe: {ex}</h2>", 500)
+                return
 
-        super().do_GET()
+        return super().do_GET()
 
     def do_POST(self):
-        global FB_PROCESS, FB_STATUS
-        content_length = int(self.headers.get("Content-Length", 0))
-        body_bytes = self.rfile.read(content_length) if content_length > 0 else b""
-        payload = {}
+        global FB_PROCESS, FB_STATUS, SEND_THREAD, SEND_STATUS, SEND_RESULT
 
-        if body_bytes:
-            try:
-                payload = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                pass
+        parsed = urlparse(self.path)
+        clean_path = parsed.path
 
-        if self.path in ("/api/start", "/api/facebook/start"):
+        length = int(self.headers.get("Content-Length", 0))
+        body_str = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        try:
+            body = json.loads(body_str)
+        except Exception:
+            body = {}
+
+        if clean_path == "/api/start":
             if FB_PROCESS is not None and FB_PROCESS.poll() is None:
-                self._send_json({"error": "Facebook Harvester is already running"}, status=400)
+                self._send_json({"error": "Harvester is already running."}, 400)
                 return
 
-            req_budget = payload.get("requests", 100)
-            cmd = [
-                sys.executable,
-                str(FACEBOOK_DIR / "src" / "run_credit_capped_harvest.py"),
-                "--requests", str(req_budget),
-                "--output", "facebook_100credit_email_leads"
-            ]
+            budget = int(body.get("budget", 10))
+            niche = body.get("niche", "Love Couple").strip()
+            dry_run = body.get("dry_run", True)
 
-            print(f"\n📘 [API Facebook Start] Executing Command: {' '.join(cmd)}")
+            script_path = FACEBOOK_DIR / "src" / "run_pipeline.py"
+            cmd = [sys.executable, str(script_path), "--niche", niche, "--limit", str(budget)]
+            if dry_run:
+                cmd.append("--dry-run")
+
+            FB_STATUS = f"Running Harvester for '{niche}' (Limit {budget})..."
             FB_PROCESS = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT))
-            FB_STATUS = "Facebook Email Harvester Active"
-
-            self._send_json({
-                "success": True,
-                "message": "Facebook Email Harvester started successfully",
-                "pid": FB_PROCESS.pid
-            })
+            self._send_json({"message": f"Harvester launched for '{niche}'!", "budget": budget, "niche": niche})
             return
 
-        elif self.path in ("/api/stop", "/api/facebook/stop"):
-            if FB_PROCESS is not None:
-                print("\n⏹️ [API Facebook Stop] Terminating Facebook harvester process...")
-                try:
-                    FB_PROCESS.terminate()
-                    time.sleep(1)
-                    if FB_PROCESS.poll() is None:
-                        FB_PROCESS.kill()
-                except Exception as ex:
-                    print(f"Error terminating process: {ex}")
+        if clean_path == "/api/stop":
+            if FB_PROCESS is not None and FB_PROCESS.poll() is None:
+                FB_PROCESS.terminate()
                 FB_PROCESS = None
-                FB_STATUS = "Stopped by User"
-
-            self._send_json({"success": True, "message": "Facebook harvester stopped"})
+                FB_STATUS = "Stopped by user"
+                self._send_json({"message": "Harvester stopped."})
+            else:
+                self._send_json({"error": "No harvester process is running."}, 400)
             return
 
-        elif self.path in ("/api/campaigns", "/api/facebook/campaigns"):
-            name = payload.get("name")
-            subject_template = payload.get("subject_template")
-            body_template = payload.get("body_template")
-            if not (name and subject_template and body_template):
-                self._send_json({"error": "name, subject_template and body_template are required"}, status=400)
-                return
-
-            campaign_id = fb_sender.create_campaign(name, subject_template, body_template)
-            self._send_json({"success": True, "id": campaign_id, "name": name})
-            return
-
-        elif self.path in ("/api/send/run", "/api/facebook/send/run"):
-            global SEND_THREAD, SEND_STATUS, SEND_RESULT
-
-            if SEND_THREAD is not None and SEND_THREAD.is_alive():
-                self._send_json({"error": "A send is already running"}, status=400)
-                return
-
-            campaign_id = payload.get("campaign_id")
-            if not campaign_id:
-                self._send_json({"error": "campaign_id is required"}, status=400)
-                return
-            requests_limit = payload.get("limit")
-
-            def _run():
-                global SEND_STATUS, SEND_RESULT
-                SEND_STATUS = "Sending"
-                try:
-                    SEND_RESULT = fb_sender.send_campaign(campaign_id, requests_limit)
-                except Exception as ex:
-                    print(f"⚠️ [Facebook Send] Error during send: {ex}")
-                    SEND_RESULT = {"error": str(ex)}
-                SEND_STATUS = "Idle"
-
-            SEND_THREAD = threading.Thread(target=_run, daemon=True)
-            SEND_THREAD.start()
-
-            self._send_json({"success": True, "message": "Facebook campaign send started", "campaign_id": campaign_id})
-            return
-
-        self._send_json({"error": "Endpoint not found"}, status=404)
+        self._send_json({"error": "Endpoint not found"}, 404)
 
 
 def run_server():
     server_address = ("", PORT)
     httpd = ThreadingHTTPServer(server_address, FacebookAPIHandler)
-    print("=" * 80)
-    print(f"📘 FACEBOOK EMAIL OUTREACH DASHBOARD SERVER RUNNING AT: http://localhost:{PORT}")
-    print("=" * 80)
+    print(f"🚀 Facebook Creator Outreach Web Dashboard running on http://localhost:{PORT}")
     httpd.serve_forever()
 
 

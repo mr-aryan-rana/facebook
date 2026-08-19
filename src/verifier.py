@@ -21,6 +21,17 @@ DISALLOWED_DOMAINS = {
 }
 
 
+def normalize_unicode_text(text: str) -> str:
+    """Normalizes Unicode non-breaking hyphens and special spaces to standard ASCII."""
+    if not text:
+        return ""
+    # Normalize non-breaking hyphen (\u2011), en-dash (\u2013), em-dash (\u2014), figure dash (\u2012)
+    cleaned = text.replace("\u2011", "-").replace("\u2013", "-").replace("\u2014", "-").replace("\u2012", "-")
+    # Normalize non-breaking spaces (\u00a0, \u200b)
+    cleaned = cleaned.replace("\u00a0", " ").replace("\u200b", "")
+    return cleaned
+
+
 def verify_email_dns(email: str) -> Tuple[bool, str]:
     """
     Verifies whether an email address format is valid and its domain has active DNS/MX records.
@@ -38,8 +49,6 @@ def verify_email_dns(email: str) -> Tuple[bool, str]:
         is_active = DNS_CACHE[domain]
         return is_active, "Valid (DNS Verified)" if is_active else "Invalid DNS (NXDOMAIN)"
 
-    # Check MX first: a domain can accept mail without publishing an A record
-    # (e.g. sbcglobal.net), so an A-only check silently drops valid addresses.
     try:
         import dns.resolver
         answers = dns.resolver.resolve(domain, "MX")
@@ -51,7 +60,6 @@ def verify_email_dns(email: str) -> Tuple[bool, str]:
     except Exception:
         pass
 
-    # Fallback: hosts with no MX still accept mail at their A record (RFC 5321).
     try:
         socket.gethostbyname(domain)
         DNS_CACHE[domain] = True
@@ -75,20 +83,6 @@ def _resolve_mx(domain: str) -> Optional[str]:
 
 
 def verify_smtp_mailbox(email: str, from_address: str = "verify@makeable.nyc", timeout: int = 10) -> Tuple[Optional[bool], str]:
-    """Real mailbox-existence check via SMTP RCPT TO, without sending a
-    message. Confirmed against live Gmail servers: a nonexistent mailbox
-    gets an explicit 550 "does not exist" rejection at RCPT time, a real
-    one gets 250 -- this is a materially stronger signal than DNS/MX
-    verification, which only proves the *domain* accepts mail, not that a
-    specific address has an inbox behind it.
-
-    Returns (True, msg) if the mailbox was confirmed to exist, (False, msg)
-    if the server explicitly rejected it, or (None, msg) if the probe was
-    inconclusive (connection blocked, greylisted, timeout, or a provider
-    that accepts-all at RCPT and only bounces after full delivery) --
-    inconclusive must never be treated as "invalid": that would silently
-    drop real addresses whenever a mail server declines to answer the
-    probe, which is common and not evidence the mailbox is fake."""
     if not email or "@" not in email:
         return False, "Invalid Format"
 
@@ -110,18 +104,6 @@ def verify_smtp_mailbox(email: str, from_address: str = "verify@makeable.nyc", t
                 return True, "Mailbox confirmed (RCPT 250)"
 
             if code in (550, 551, 553):
-                # A 550 alone isn't proof the mailbox doesn't exist -- only
-                # the enhanced status code's *subject* class tells you why.
-                # 5.1.x = "Address" (recipient genuinely doesn't exist).
-                # 5.7.x = "Security/Policy" -- confirmed in practice: this
-                # probe gets 550 5.7.1 "blocked using Spamhaus" from
-                # Microsoft 365-hosted domains because THIS MACHINE'S
-                # outbound IP is on a blocklist, which says nothing about
-                # whether the recipient mailbox exists. Only 5.1.x is
-                # treated as a genuine rejection; anything else with a 550
-                # is a policy/reputation block and must stay inconclusive,
-                # or a clean sender IP's real send would still succeed
-                # where this probe wrongly marked the address invalid.
                 enhanced_match = re.match(r"5\.(\d+)\.\d+", first_line)
                 if enhanced_match and enhanced_match.group(1) == "1":
                     return False, f"Mailbox rejected (RCPT {code}: {first_line})"
@@ -135,9 +117,16 @@ def verify_smtp_mailbox(email: str, from_address: str = "verify@makeable.nyc", t
 def verify_us_phone(text: str) -> Tuple[bool, str, str]:
     """
     Extracts and validates a REAL US phone number from text.
+    Normalizes unicode non-breaking hyphens (\u2011).
     Rejects fictional 555-0100 through 555-0199 numbers and fake repeated digits.
     Returns (is_valid: bool, formatted_phone: str, area_code: str)
     """
+    if not text:
+        return False, "", ""
+
+    # Normalize unicode hyphens & non-breaking spaces
+    text = normalize_unicode_text(text)
+
     matches = PHONE_REGEX.findall(text)
     if not matches:
         return False, "", ""
@@ -148,11 +137,9 @@ def verify_us_phone(text: str) -> Tuple[bool, str, str]:
         prefix = m[2]
         line = m[3]
 
-        # REJECT fictional 555 numbers (e.g. 555-0100 -> 555-0199 or 555-xxxx)
         if prefix == "555":
             continue
 
-        # REJECT dummy repeating numbers like 123-4567 or 000-0000
         if line in ("0000", "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888", "9999", "1234"):
             continue
 

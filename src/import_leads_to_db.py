@@ -59,6 +59,7 @@ def import_leads() -> dict:
                 "name": item.get("name") or uname,
                 "profile_url": item.get("page_url") or f"https://www.facebook.com/{uname}",
                 "phone": item.get("mobile_number") or None,
+                "location": item.get("location") or None,
             }
 
     inserted_creators, inserted_emails = 0, 0
@@ -66,14 +67,25 @@ def import_leads() -> dict:
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         for lead in seen_emails.values():
+            # location backfills a NULL (never confirmed) but never
+            # overwrites an already-set value, and NULLIF blocks the exact
+            # literal "United States" from ever being written -- that
+            # specific string is the old hardcoded default every scrape
+            # file predating the location-detection fix (see 2026-08-18
+            # conversation) has baked into every entry, so it's untrustworthy
+            # regardless of which file it came from. Real signals ("City,
+            # ST", the phone-area-code annotation, "Non-US", "Unconfirmed")
+            # pass through and backfill existing creators normally.
             cur.execute(
                 """
-                INSERT INTO creators (name, platform, profile_url, phone)
-                VALUES (%s, 'facebook', %s, %s)
-                ON CONFLICT (profile_url) DO UPDATE SET name = EXCLUDED.name
+                INSERT INTO creators (name, platform, profile_url, phone, location)
+                VALUES (%s, 'facebook', %s, %s, %s)
+                ON CONFLICT (profile_url) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    location = COALESCE(creators.location, NULLIF(EXCLUDED.location, 'United States'))
                 RETURNING id, (xmax = 0) AS was_inserted
                 """,
-                (lead["name"], lead["profile_url"], lead["phone"]),
+                (lead["name"], lead["profile_url"], lead["phone"], lead["location"]),
             )
             row = cur.fetchone()
             creator_id = row["id"]
