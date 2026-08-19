@@ -67,6 +67,35 @@ def get_postgres_conn():
     return None
 
 
+def get_serper_used_24h():
+    usage_file = FACEBOOK_DIR / "Data" / "serper_credit_usage.json"
+    if usage_file.exists():
+        try:
+            with open(usage_file, encoding="utf-8") as f:
+                stamps = json.load(f).get("timestamps", [])
+                now = time.time()
+                recent = [t for t in stamps if t >= (now - 86400)]
+                return len(recent)
+        except Exception:
+            pass
+    return 0
+
+
+def get_emails_sent_24h(conn):
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT COUNT(*) FROM email_logs
+                WHERE sent_at >= NOW() - INTERVAL '24 hours' AND status = 'sent'
+            """)
+            row = cur.fetchone()
+            return row[0] if row else 0
+        except Exception:
+            pass
+    return 0
+
+
 def load_facebook_emails(force_refresh=False):
     global LAST_CACHE_TIME, CACHED_FB_DATA
 
@@ -76,9 +105,12 @@ def load_facebook_emails(force_refresh=False):
 
     leads_dict = {}
     total_db_sent = 0
+    sent_24h = 0
 
     # 1. Query Real PostgreSQL Database (emails, creators, validations, email_logs)
     conn = get_postgres_conn()
+    if conn:
+        sent_24h = get_emails_sent_24h(conn)
     if conn:
         try:
             cur = conn.cursor()
@@ -183,6 +215,10 @@ def load_facebook_emails(force_refresh=False):
         "total_emails": len(email_list),
         "total_phones": phone_count,
         "total_sent": max(total_db_sent, sent_count),
+        "emails_sent_24h": max(sent_24h, sent_count),
+        "email_daily_limit": int(os.environ.get("EMAIL_DAILY_LIMIT", "200")),
+        "serper_used_24h": get_serper_used_24h(),
+        "serper_daily_limit": int(os.environ.get("SERPER_DAILY_CREDIT_LIMIT", "60")),
         "dns_verified": dns_verified_count,
         "emails": email_list
     }

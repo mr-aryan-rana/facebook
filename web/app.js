@@ -133,18 +133,20 @@ async function checkStatus() {
 
       document.getElementById("metricTotalEmails").innerText = totalEmails.toLocaleString();
       document.getElementById("metricTotalPhones").innerText = totalPhones.toLocaleString();
-      document.getElementById("metricTotalSent").innerText = totalSent.toLocaleString();
       
-      // Update Quota Badges & Progress Bars
-      const serperUsed = data.serper_used || 3;
-      const emailSentCount = totalSent;
+      // Update Quota Badges & Progress Bars dynamically from 24h rolling metrics
+      const serperUsed = data.serper_used_24h !== undefined ? data.serper_used_24h : (data.serper_used || 0);
+      const serperLimit = data.serper_daily_limit || 60;
+      const emailSentCount = data.emails_sent_24h !== undefined ? data.emails_sent_24h : totalSent;
+      const emailLimit = data.email_daily_limit || 200;
 
-      document.getElementById("serperQuotaBadge").innerText = `${serperUsed} / 60 credits`;
-      document.getElementById("emailQuotaBadge").innerText = `${emailSentCount} / 200 sent`;
+      document.getElementById("serperQuotaBadge").innerText = `${serperUsed} / ${serperLimit} credits`;
+      document.getElementById("emailQuotaBadge").innerText = `${emailSentCount} / ${emailLimit} sent`;
       document.getElementById("metricSerperUsed").innerText = serperUsed;
+      document.getElementById("metricTotalSent").innerText = emailSentCount;
 
-      const serperPct = Math.min(100, Math.round((serperUsed / 60) * 100));
-      const emailPct = Math.min(100, Math.round((emailSentCount / 200) * 100));
+      const serperPct = Math.min(100, Math.round((serperUsed / serperLimit) * 100));
+      const emailPct = Math.min(100, Math.round((emailSentCount / emailLimit) * 100));
 
       const serperBar = document.getElementById("serperProgressBar");
       const emailBar = document.getElementById("emailProgressBar");
