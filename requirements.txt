@@ -1,0 +1,18 @@
+# =============================================================================
+# 📦 Facebook Outreach Module Dependencies
+# =============================================================================
+
+# PostgreSQL Database driver
+psycopg2-binary>=2.9.9
+
+# Redis Client for atomic quota tracking
+redis>=5.0.1
+
+# DNS Resolver for zero-send email validation (MX record check)
+dnspython>=2.6.1
+
+# Environment variable loader (.env & .env.local)
+python-dotenv>=1.0.1
+
+# HTTP requests library
+requests>=2.31.0
