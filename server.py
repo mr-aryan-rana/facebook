@@ -35,7 +35,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     except Exception:
         pass
 
-PORT = 5001
+PORT = int(os.environ.get("PORT", "10000"))
 FACEBOOK_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = FACEBOOK_DIR.parent
 WEB_DIR = FACEBOOK_DIR / "web"
