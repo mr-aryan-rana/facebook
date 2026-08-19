@@ -295,7 +295,7 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
                 cmd.append("--dry-run")
 
             FB_STATUS = f"Running Harvester for '{niche}' (Limit {budget})..."
-            FB_PROCESS = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT))
+            FB_PROCESS = subprocess.Popen(cmd, cwd=str(FACEBOOK_DIR))
             self._send_json({"message": f"Harvester launched for '{niche}'!", "budget": budget, "niche": niche})
             return
 
