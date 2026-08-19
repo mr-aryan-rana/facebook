@@ -87,12 +87,9 @@ def get_emails_sent_24h(conn):
             cur = conn.cursor()
             cur.execute("""
                 SELECT COUNT(*)
-                FROM email_logs el
-                JOIN emails e ON e.id = el.email_id
-                LEFT JOIN creators c ON e.creator_id = c.id
-                WHERE el.sent_at >= NOW() - INTERVAL '24 hours'
-                  AND el.status = 'sent'
-                  AND COALESCE(c.platform, '') ILIKE '%facebook%'
+                FROM email_logs
+                WHERE sent_at >= NOW() - INTERVAL '24 hours'
+                  AND status = 'sent'
             """)
             row = cur.fetchone()
             return row[0] if row else 0
@@ -142,7 +139,6 @@ def load_facebook_emails(force_refresh=False):
                     ORDER BY sent_at DESC NULLS LAST
                     LIMIT 1
                 ) el ON TRUE
-                WHERE COALESCE(c.platform, '') ILIKE '%facebook%'
                 ORDER BY el.sent_at DESC NULLS LAST, e.id DESC
             """)
             db_rows = cur.fetchall()
@@ -226,7 +222,7 @@ def load_facebook_emails(force_refresh=False):
         "total_emails": len(email_list),
         "total_phones": phone_count,
         "total_sent": max(total_db_sent, sent_count),
-        "emails_sent_24h": max(sent_24h, sent_count),
+        "emails_sent_24h": sent_24h,
         "email_daily_limit": int(os.environ.get("EMAIL_DAILY_LIMIT", "200")),
         "serper_used_24h": get_serper_used_24h(),
         "serper_daily_limit": int(os.environ.get("SERPER_DAILY_CREDIT_LIMIT", "60")),
