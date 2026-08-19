@@ -8,9 +8,10 @@ Serves the Facebook web dashboard (facebook/web/index.html) and provides REST AP
   • GET  /api/emails       - Returns full list of scraped & real DB Facebook creator emails & mobile numbers
   • POST /api/start        - Launches Facebook email harvester in background with dynamic UI niche & budget
   • POST /api/stop         - Terminates active Facebook harvester process
-  • POST /api/campaigns    - Creates/updates an email campaign (subject/body spintax templates)
-  • POST /api/send/run     - Starts sending a campaign to Facebook leads in the background
   • GET  /unsubscribe      - Public one-click unsubscribe link (no auth; HMAC token-verified)
+
+Note: actual outreach sending runs out-of-band via `facebook/src/sender.py`
+(invoked by the harvester pipeline / a scheduler), not through this HTTP API.
 =============================================================================
 """
 
@@ -27,7 +28,6 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from env_loader import load_env  # noqa: E402
 from unsubscribe_token import verify_token  # noqa: E402
-import sender as fb_sender  # noqa: E402
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     try:
@@ -86,8 +86,13 @@ def get_emails_sent_24h(conn):
         try:
             cur = conn.cursor()
             cur.execute("""
-                SELECT COUNT(*) FROM email_logs
-                WHERE sent_at >= NOW() - INTERVAL '24 hours' AND status = 'sent'
+                SELECT COUNT(*)
+                FROM email_logs el
+                JOIN emails e ON e.id = el.email_id
+                LEFT JOIN creators c ON e.creator_id = c.id
+                WHERE el.sent_at >= NOW() - INTERVAL '24 hours'
+                  AND el.status = 'sent'
+                  AND COALESCE(c.platform, '') ILIKE '%facebook%'
             """)
             row = cur.fetchone()
             return row[0] if row else 0
@@ -131,7 +136,13 @@ def load_facebook_emails(force_refresh=False):
                 FROM emails e
                 LEFT JOIN creators c ON e.creator_id = c.id
                 LEFT JOIN validations v ON e.id = v.email_id
-                LEFT JOIN email_logs el ON e.id = el.email_id
+                LEFT JOIN LATERAL (
+                    SELECT status, sent_at FROM email_logs
+                    WHERE email_id = e.id
+                    ORDER BY sent_at DESC NULLS LAST
+                    LIMIT 1
+                ) el ON TRUE
+                WHERE COALESCE(c.platform, '') ILIKE '%facebook%'
                 ORDER BY el.sent_at DESC NULLS LAST, e.id DESC
             """)
             db_rows = cur.fetchall()
