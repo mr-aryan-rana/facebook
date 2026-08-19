@@ -11,6 +11,7 @@ PROJECT_ROOT = FACEBOOK_DIR.parent
 
 def load_env() -> None:
     env_paths = [
+        FACEBOOK_DIR / ".env.production",
         FACEBOOK_DIR / ".env.local",
         FACEBOOK_DIR / ".env",
         FACEBOOK_DIR / "src" / ".env",
@@ -21,4 +22,7 @@ def load_env() -> None:
             for line in env_path.read_text(encoding="utf-8").splitlines():
                 if "=" in line and not line.strip().startswith("#"):
                     k, v = line.split("=", 1)
-                    os.environ[k.strip()] = v.strip()
+                    k_str = k.strip()
+                    v_str = v.strip()
+                    if k_str and v_str and k_str not in os.environ:
+                        os.environ[k_str] = v_str
