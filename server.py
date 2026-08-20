@@ -93,6 +93,7 @@ def get_postgres_conn():
 
 
 def get_serper_used_24h(conn):
+    db_count = 0
     if conn:
         try:
             cur = conn.cursor()
@@ -109,10 +110,11 @@ def get_serper_used_24h(conn):
                 WHERE created_at >= NOW() - INTERVAL '24 hours'
             """)
             row = cur.fetchone()
-            return row[0] if row else 0
+            db_count = row[0] if row else 0
         except Exception:
             pass
 
+    json_count = 0
     usage_file = FACEBOOK_DIR / "Data" / "serper_credit_usage.json"
     if usage_file.exists():
         try:
@@ -120,10 +122,11 @@ def get_serper_used_24h(conn):
                 stamps = json.load(f).get("timestamps", [])
                 now = time.time()
                 recent = [t for t in stamps if t >= (now - 86400)]
-                return len(recent)
+                json_count = len(recent)
         except Exception:
             pass
-    return 0
+
+    return max(db_count, json_count)
 
 
 def get_emails_sent_24h(conn):

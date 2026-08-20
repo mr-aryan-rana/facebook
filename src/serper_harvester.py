@@ -98,7 +98,8 @@ def save_credit_log(timestamps: list):
         pass
 
 def get_credits_used_in_24h() -> tuple:
-    """Returns (count_used, valid_recent_timestamps) for rolling last 24 hours from Postgres DB."""
+    """Returns (count_used, valid_recent_timestamps) for rolling last 24 hours."""
+    db_count = 0
     conn = get_db_conn()
     if conn:
         try:
@@ -109,10 +110,9 @@ def get_credits_used_in_24h() -> tuple:
                 WHERE created_at >= NOW() - INTERVAL '24 hours'
             """)
             row = cur.fetchone()
-            count = row[0] if row else 0
+            db_count = row[0] if row else 0
             cur.close()
             conn.close()
-            return count, []
         except Exception:
             pass
 
@@ -120,7 +120,10 @@ def get_credits_used_in_24h() -> tuple:
     twenty_four_hours_ago = now - (24 * 3600)
     timestamps = load_credit_log()
     valid_stamps = [t for t in timestamps if t >= twenty_four_hours_ago]
-    return len(valid_stamps), valid_stamps
+    json_count = len(valid_stamps)
+
+    total_used = max(db_count, json_count)
+    return total_used, valid_stamps
 
 def record_credit_used(query: str = ""):
     """Records 1 Serper credit consumption in PostgreSQL database."""
