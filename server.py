@@ -49,6 +49,10 @@ SEND_THREAD = None
 SEND_STATUS = "idle"
 SEND_RESULT = None
 
+LAST_CACHE_TIME = 0
+CACHED_FB_DATA = None
+CACHE_TTL_SEC = 5
+
 def is_pid_running(pid: int) -> bool:
     if not pid or pid <= 0:
         return False
