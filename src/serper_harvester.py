@@ -145,17 +145,23 @@ def record_credit_used(query: str = ""):
 
 def fetch_serper(query: str, num: int = 10, verbose: bool = False) -> list:
     """Fetches real-time search results via Serper API with 60 credits/day quota check."""
+    load_env()
+    serper_key = os.environ.get("SERPER_KEY", "")
     used_24h, valid_stamps = get_credits_used_in_24h()
     
     if used_24h >= SERPER_DAILY_CREDIT_LIMIT:
         print(f"🛑 [Serper Quota Exceeded] Daily credit limit of {SERPER_DAILY_CREDIT_LIMIT} calls/24h reached ({used_24h} used). Halting Serper search.")
         return []
 
+    if not serper_key:
+        print("⚠️ [Serper Harvester] SERPER_KEY not set in environment.")
+        return []
+
     url = "https://google.serper.dev/search"
     payload_dict = {"q": query, "num": num}
     payload = json.dumps(payload_dict).encode("utf-8")
     headers = {
-        "X-API-KEY": SERPER_KEY,
+        "X-API-KEY": serper_key,
         "Content-Type": "application/json"
     }
 

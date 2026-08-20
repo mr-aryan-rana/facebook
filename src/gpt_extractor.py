@@ -30,10 +30,14 @@ from verifier import verify_us_phone, normalize_unicode_text
 
 load_env()
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-
 def extract_and_verify_leads(raw_items: list, verbose: bool = False) -> list:
     """Processes a list of raw search items through OpenAI GPT and returns clean, verified leads."""
+    load_env()
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        print("❌ [GPT Extractor] Error: OPENAI_API_KEY not set in environment.")
+        return []
+
     if not raw_items:
         print("⚠️ [GPT Extractor] No raw items provided.")
         return []
@@ -96,7 +100,7 @@ Raw Input Batch ({len(clean_raw_items)} items):
         "https://api.openai.com/v1/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": "Bearer " + OPENAI_API_KEY,
+            "Authorization": "Bearer " + api_key,
             "Content-Type": "application/json"
         }
     )

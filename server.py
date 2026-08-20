@@ -43,6 +43,12 @@ WEB_DIR = FACEBOOK_DIR / "web"
 PID_FILE = FACEBOOK_DIR / "Data" / "harvester.pid"
 LOG_FILE = FACEBOOK_DIR / "Data" / "harvester.log"
 
+FB_PROCESS = None
+FB_STATUS = "idle"
+SEND_THREAD = None
+SEND_STATUS = "idle"
+SEND_RESULT = None
+
 def is_pid_running(pid: int) -> bool:
     if not pid or pid <= 0:
         return False
