@@ -85,15 +85,27 @@ def main():
     if args.loop:
         import time
         cycle = 1
-        print(f"🔄 Starting Continuous Pipeline Loop (Interval: {args.interval}s)...")
+        base_niche = args.niche
+        niche_variations = [
+            base_niche,
+            f"{base_niche} Vlog",
+            f"Travel {base_niche}",
+            f"{base_niche} UGC Creator",
+            f"Wedding {base_niche}",
+            f"{base_niche} Lifestyle"
+        ]
+        print(f"🔄 Starting Autonomous 24/7 Pipeline Daemon (Loop Interval: {args.interval}s)...")
         while True:
-            print(f"\n--- 🔄 Pipeline Cycle #{cycle} ---")
+            current_niche = niche_variations[(cycle - 1) % len(niche_variations)]
+            print(f"\n" + "=" * 80)
+            print(f"🔄 PIPELINE CYCLE #{cycle} | Niche: '{current_niche}'")
+            print("=" * 80)
             try:
-                run_full_pipeline(niche=args.niche, limit_per_platform=args.limit, dry_run=args.dry_run, verbose=args.inspect)
+                run_full_pipeline(niche=current_niche, limit_per_platform=args.limit, dry_run=args.dry_run, verbose=args.inspect)
             except Exception as ex:
-                print(f"⚠️ Error during cycle #{cycle}: {ex}")
+                print(f"⚠️ Exception during pipeline cycle #{cycle}: {ex}")
             cycle += 1
-            print(f"\n⏱️ Cycle complete. Sleeping {args.interval}s before next harvest run...")
+            print(f"\n⏱️ Cycle #{cycle-1} complete. Sleeping {args.interval}s before next autonomous run...")
             time.sleep(args.interval)
     else:
         run_full_pipeline(niche=args.niche, limit_per_platform=args.limit, dry_run=args.dry_run, verbose=args.inspect)
