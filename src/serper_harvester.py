@@ -52,8 +52,34 @@ EXCLUDED_KEYWORDS = [
     "school district", "city hall", "embassy", "consulate", "ministry", "state of "
 ]
 
+def get_db_conn():
+    raw_url = os.environ.get("DIRECT_URL") or os.environ.get("DATABASE_URL")
+    if raw_url:
+        try:
+            import psycopg2
+            return psycopg2.connect(raw_url.split("?")[0], connect_timeout=5)
+        except Exception:
+            pass
+    return None
+
+def init_serper_db(conn):
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS serper_logs (
+                    id SERIAL PRIMARY KEY,
+                    query VARCHAR(500),
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+            """)
+            conn.commit()
+            cur.close()
+        except Exception:
+            pass
+
 def load_credit_log() -> list:
-    """Loads past Serper credit usage timestamps."""
+    """Loads past Serper credit usage timestamps from local fallback."""
     if not TRACKER_FILE.exists():
         return []
     try:
@@ -64,7 +90,7 @@ def load_credit_log() -> list:
         return []
 
 def save_credit_log(timestamps: list):
-    """Saves updated Serper credit usage timestamps."""
+    """Saves updated Serper credit usage timestamps to local fallback."""
     try:
         with open(TRACKER_FILE, "w", encoding="utf-8") as f:
             json.dump({"timestamps": timestamps}, f, indent=2)
@@ -72,15 +98,44 @@ def save_credit_log(timestamps: list):
         pass
 
 def get_credits_used_in_24h() -> tuple:
-    """Returns (count_used, valid_recent_timestamps) for rolling last 24 hours."""
+    """Returns (count_used, valid_recent_timestamps) for rolling last 24 hours from Postgres DB."""
+    conn = get_db_conn()
+    if conn:
+        try:
+            init_serper_db(conn)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT COUNT(*) FROM serper_logs
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
+            """)
+            row = cur.fetchone()
+            count = row[0] if row else 0
+            cur.close()
+            conn.close()
+            return count, []
+        except Exception:
+            pass
+
     now = time.time()
     twenty_four_hours_ago = now - (24 * 3600)
     timestamps = load_credit_log()
     valid_stamps = [t for t in timestamps if t >= twenty_four_hours_ago]
     return len(valid_stamps), valid_stamps
 
-def record_credit_used():
-    """Records 1 Serper credit consumption timestamp."""
+def record_credit_used(query: str = ""):
+    """Records 1 Serper credit consumption in PostgreSQL database."""
+    conn = get_db_conn()
+    if conn:
+        try:
+            init_serper_db(conn)
+            cur = conn.cursor()
+            cur.execute("INSERT INTO serper_logs (query) VALUES (%s)", (query[:500],))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
     count, valid_stamps = get_credits_used_in_24h()
     valid_stamps.append(time.time())
     save_credit_log(valid_stamps)

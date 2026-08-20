@@ -67,7 +67,27 @@ def get_postgres_conn():
     return None
 
 
-def get_serper_used_24h():
+def get_serper_used_24h(conn):
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS serper_logs (
+                    id SERIAL PRIMARY KEY,
+                    query VARCHAR(500),
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );
+            """)
+            conn.commit()
+            cur.execute("""
+                SELECT COUNT(*) FROM serper_logs
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
+            """)
+            row = cur.fetchone()
+            return row[0] if row else 0
+        except Exception:
+            pass
+
     usage_file = FACEBOOK_DIR / "Data" / "serper_credit_usage.json"
     if usage_file.exists():
         try:
@@ -224,7 +244,7 @@ def load_facebook_emails(force_refresh=False):
         "total_sent": max(total_db_sent, sent_count),
         "emails_sent_24h": sent_24h,
         "email_daily_limit": int(os.environ.get("EMAIL_DAILY_LIMIT", "200")),
-        "serper_used_24h": get_serper_used_24h(),
+        "serper_used_24h": get_serper_used_24h(conn),
         "serper_daily_limit": int(os.environ.get("SERPER_DAILY_CREDIT_LIMIT", "60")),
         "dns_verified": dns_verified_count,
         "emails": email_list
