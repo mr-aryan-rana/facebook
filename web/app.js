@@ -215,22 +215,26 @@ function updateUIStatus(running, statusText) {
   isHarvesterRunning = running;
   const badge = document.getElementById("statusBadge");
   const text = document.getElementById("statusText");
-  const btnStart = document.getElementById("btnStart");
-  const btnStop = document.getElementById("btnStop");
 
   if (text) text.innerText = statusText || (running ? "Harvester Active" : "Ready");
 
   if (badge) {
     if (running) {
       badge.className = "status-badge running";
-      if (btnStart) btnStart.style.display = "none";
-      if (btnStop) btnStop.style.display = "inline-flex";
     } else {
       badge.className = "status-badge idle";
-      if (btnStart) btnStart.style.display = "inline-flex";
-      if (btnStop) btnStop.style.display = "none";
     }
   }
+
+  const startBtns = document.querySelectorAll(".btn-start-action");
+  const stopBtns = document.querySelectorAll(".btn-stop-action");
+
+  startBtns.forEach(btn => {
+    if (btn) btn.style.display = running ? "none" : "inline-flex";
+  });
+  stopBtns.forEach(btn => {
+    if (btn) btn.style.display = running ? "inline-flex" : "none";
+  });
 }
 
 async function startHarvester() {

@@ -68,9 +68,14 @@
             <h1>Overview</h1>
             <p class="content-subtitle">Facebook creator outreach performance at a glance</p>
           </div>
-          <button class="btn btn-primary" onclick="switchMainSection('controls')">
-            <span>&#9654;</span> Configure &amp; Launch Harvester
-          </button>
+          <div class="header-action-group">
+            <button id="btnOverviewStart" class="btn btn-primary btn-start-action" onclick="startHarvester()">
+              <span>&#9654;</span> Launch Harvester
+            </button>
+            <button id="btnOverviewStop" class="btn btn-danger btn-stop-action" onclick="stopHarvester()" style="display: none;">
+              <span>&#9209;</span> Halt Harvester
+            </button>
+          </div>
         </header>
 
         <div class="metrics-grid">
@@ -317,10 +322,10 @@
             <div class="panel-title"><span>Autonomous Controls</span></div>
 
             <div class="action-group">
-              <button id="btnStart" class="btn btn-primary" onclick="startHarvester()">
+              <button id="btnStart" class="btn btn-primary btn-start-action" onclick="startHarvester()">
                 <span>&#9654;</span> Launch Harvester
               </button>
-              <button id="btnStop" class="btn btn-danger" onclick="stopHarvester()" style="display: none;">
+              <button id="btnStop" class="btn btn-danger btn-stop-action" onclick="stopHarvester()" style="display: none;">
                 <span>&#9209;</span> Halt Harvester
               </button>
             </div>
