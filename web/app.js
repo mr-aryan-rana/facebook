@@ -175,6 +175,40 @@ async function checkStatus() {
       updateUIStatus(false, "API Server Offline");
     }
   }
+  
+  checkLogs();
+}
+
+let lastLogContent = "";
+
+async function checkLogs() {
+  try {
+    const res = await fetch("/api/logs");
+    if (res.ok) {
+      const data = await res.json();
+      const logs = data.logs || [];
+      const consoleEl = document.getElementById("terminalConsole");
+      if (consoleEl && logs.length > 0) {
+        const logText = logs.join("\n");
+        if (logText !== lastLogContent) {
+          lastLogContent = logText;
+          consoleEl.innerHTML = "";
+          logs.forEach(line => {
+            let colorClass = "text-cyan";
+            if (line.includes("SENT") || line.includes("SUCCESS") || line.includes("✅")) colorClass = "text-emerald";
+            if (line.includes("Delay") || line.includes("Sleeping") || line.includes("⏱️")) colorClass = "text-amber";
+            if (line.includes("Error") || line.includes("Exceeded") || line.includes("❌") || line.includes("⛔")) colorClass = "text-rose";
+
+            const div = document.createElement("div");
+            div.className = `terminal-line ${colorClass}`;
+            div.innerText = line;
+            consoleEl.appendChild(div);
+          });
+          consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+      }
+    }
+  } catch (err) {}
 }
 
 function updateUIStatus(running, statusText) {

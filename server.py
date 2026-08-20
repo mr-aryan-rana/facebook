@@ -278,6 +278,19 @@ def load_facebook_emails(force_refresh=False):
     return CACHED_FB_DATA
 
 
+def get_last_log_status():
+    if LOG_FILE.exists():
+        try:
+            lines = LOG_FILE.read_text(encoding="utf-8").splitlines()
+            for line in reversed(lines[-20:]):
+                line_str = line.strip()
+                if line_str and not line_str.startswith("=") and not line_str.startswith("-"):
+                    return line_str[:80]
+        except Exception:
+            pass
+    return None
+
+
 class FacebookAPIHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
@@ -316,8 +329,20 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
             running = (running_pid is not None) or (FB_PROCESS is not None and FB_PROCESS.poll() is None)
             data = load_facebook_emails()
             data["running"] = running
-            data["statusText"] = FB_STATUS if running else "System Ready"
+            last_log = get_last_log_status()
+            data["statusText"] = last_log if (running and last_log) else (FB_STATUS if running else "System Ready")
             self._send_json(data)
+            return
+
+        if clean_path == "/api/logs":
+            logs = []
+            if LOG_FILE.exists():
+                try:
+                    lines = LOG_FILE.read_text(encoding="utf-8").splitlines()
+                    logs = lines[-100:]
+                except Exception:
+                    pass
+            self._send_json({"logs": logs})
             return
 
         if clean_path == "/api/emails":
