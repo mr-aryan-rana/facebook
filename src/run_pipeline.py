@@ -31,6 +31,36 @@ from gpt_extractor import extract_and_verify_leads
 from db_lead_sync import sync_and_filter_leads_for_outreach
 from outreach_sender import send_outreach_to_queued_leads
 
+class DualLogger:
+    def __init__(self, filepath):
+        self.terminal = sys.stdout
+        self.filepath = filepath
+
+    def write(self, message):
+        if self.terminal:
+            try:
+                self.terminal.write(message)
+                self.terminal.flush()
+            except Exception:
+                pass
+        try:
+            self.filepath.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.filepath, "a", encoding="utf-8") as f:
+                f.write(message)
+        except Exception:
+            pass
+
+    def flush(self):
+        if self.terminal:
+            try:
+                self.terminal.flush()
+            except Exception:
+                pass
+
+log_file_path = FACEBOOK_DIR / "Data" / "harvester.log"
+sys.stdout = DualLogger(log_file_path)
+sys.stderr = sys.stdout
+
 def run_full_pipeline(niche: str, limit_per_platform: int, dry_run: bool = False, verbose: bool = True):
     print("=" * 80)
     print("🚀 UNIFIED LIVE HARVEST, GPT VERIFY, DB CHECK & OUTREACH PIPELINE")
