@@ -238,17 +238,27 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
     def _send_json(self, data, status=200):
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _send_html(self, html, status=200):
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(html.encode("utf-8"))
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(html.encode("utf-8"))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def log_exception(self, exc):
+        if not isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            super().log_exception(exc)
 
     def do_GET(self):
         global FB_PROCESS, FB_STATUS
@@ -333,7 +343,7 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
             dry_run = body.get("dry_run", False)
 
             script_path = FACEBOOK_DIR / "src" / "run_pipeline.py"
-            cmd = [sys.executable, str(script_path), "--niche", niche, "--limit", str(budget)]
+            cmd = [sys.executable, str(script_path), "--niche", niche, "--limit", str(budget), "--loop"]
             if dry_run:
                 cmd.append("--dry-run")
 

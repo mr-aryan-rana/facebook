@@ -77,9 +77,27 @@ def main():
     parser.add_argument("--limit", type=int, default=3, help="Maximum raw search results per platform")
     parser.add_argument("--dry-run", action="store_true", help="Run without sending actual outreach emails")
     parser.add_argument("--inspect", "--verbose", "-v", dest="inspect", action="store_true", help="Inspect raw Serper URL, Serper response JSON, and GPT raw response")
+    parser.add_argument("--loop", "--continuous", dest="loop", action="store_true", help="Run continuously in a loop until terminated")
+    parser.add_argument("--interval", type=int, default=120, help="Interval in seconds between loop cycles")
 
     args = parser.parse_args()
-    run_full_pipeline(niche=args.niche, limit_per_platform=args.limit, dry_run=args.dry_run, verbose=args.inspect)
+
+    if args.loop:
+        import time
+        cycle = 1
+        print(f"🔄 Starting Continuous Pipeline Loop (Interval: {args.interval}s)...")
+        while True:
+            print(f"\n--- 🔄 Pipeline Cycle #{cycle} ---")
+            try:
+                run_full_pipeline(niche=args.niche, limit_per_platform=args.limit, dry_run=args.dry_run, verbose=args.inspect)
+            except Exception as ex:
+                print(f"⚠️ Error during cycle #{cycle}: {ex}")
+            cycle += 1
+            print(f"\n⏱️ Cycle complete. Sleeping {args.interval}s before next harvest run...")
+            time.sleep(args.interval)
+    else:
+        run_full_pipeline(niche=args.niche, limit_per_platform=args.limit, dry_run=args.dry_run, verbose=args.inspect)
+
 
 if __name__ == "__main__":
     main()
