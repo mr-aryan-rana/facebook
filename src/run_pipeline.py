@@ -31,7 +31,7 @@ from gpt_extractor import extract_and_verify_leads
 from db_lead_sync import sync_and_filter_leads_for_outreach
 from outreach_sender import send_outreach_to_queued_leads
 
-def run_full_pipeline(niche: str, limit_per_platform: int, dry_run: bool = False, verbose: bool = False):
+def run_full_pipeline(niche: str, limit_per_platform: int, dry_run: bool = False, verbose: bool = True):
     print("=" * 80)
     print("🚀 UNIFIED LIVE HARVEST, GPT VERIFY, DB CHECK & OUTREACH PIPELINE")
     print("=" * 80)
@@ -48,17 +48,43 @@ def run_full_pipeline(niche: str, limit_per_platform: int, dry_run: bool = False
         print("❌ Pipeline stopped: No raw search items collected.")
         return
 
+    print("\n" + "=" * 80)
+    print(f"🌐 [RAW SEARCH HARVESTER SUMMARY] Collected {len(raw_items)} raw web items:")
+    for idx, item in enumerate(raw_items, 1):
+        print(f"  [{idx}] Platform: {item.get('platform')} | Title: {item.get('title')[:60]}")
+        print(f"      URL: {item.get('link')}")
+        print(f"      Snippet: {item.get('snippet')[:100]}")
+    print("=" * 80 + "\n")
+
     # Step 2: OpenAI Lead & Location Extraction
     extracted_leads = extract_and_verify_leads(raw_items, verbose=verbose)
     if not extracted_leads:
         print("❌ Pipeline stopped: No valid contact leads extracted.")
         return
 
+    print("\n" + "=" * 80)
+    print(f"🧠 [OPENAI GPT RESPONSE SUMMARY] Extracted {len(extracted_leads)} valid contact leads:")
+    for idx, lead in enumerate(extracted_leads, 1):
+        name = lead.get("name", "Unknown")
+        email = lead.get("email") or "No Email"
+        phone = lead.get("mobile_number") or "No Mobile"
+        loc = lead.get("location") or "USA"
+        status = lead.get("location_verification_status") or "Verified US"
+        print(f"  [{idx}] Name: '{name}' | Email: '{email}' | Phone: '{phone}'")
+        print(f"      Location: '{loc}' ({status}) | Profile: {lead.get('profile_url')}")
+    print("=" * 80 + "\n")
+
     # Step 3: DB Pre-Check & Deduplication
     queued_leads = sync_and_filter_leads_for_outreach(extracted_leads)
     if not queued_leads:
         print("ℹ️ Pipeline complete: All extracted leads were previously emailed or already exist in DB.")
         return
+
+    print("\n" + "=" * 80)
+    print(f"🗄️ [DB OUTREACH QUEUE SUMMARY] {len(queued_leads)} NEW leads queued for email outreach:")
+    for idx, ql in enumerate(queued_leads, 1):
+        print(f"  [{idx}] To: {ql.get('creator_name')} <{ql.get('address')}>")
+    print("=" * 80 + "\n")
 
     # Step 4: Email Outreach Engine
     send_stats = send_outreach_to_queued_leads(queued_leads, dry_run=dry_run)

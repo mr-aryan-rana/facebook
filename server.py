@@ -428,7 +428,7 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
             dry_run = body.get("dry_run", False)
 
             script_path = FACEBOOK_DIR / "src" / "run_pipeline.py"
-            cmd = [sys.executable, str(script_path), "--niche", niche, "--limit", str(budget), "--loop"]
+            cmd = [sys.executable, str(script_path), "--niche", niche, "--limit", str(budget), "--loop", "--inspect"]
             if dry_run:
                 cmd.append("--dry-run")
 
