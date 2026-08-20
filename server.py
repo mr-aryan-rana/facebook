@@ -40,16 +40,41 @@ FACEBOOK_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = FACEBOOK_DIR.parent
 WEB_DIR = FACEBOOK_DIR / "web"
 
-FB_PROCESS = None
-FB_STATUS = "Idle"
+PID_FILE = FACEBOOK_DIR / "Data" / "harvester.pid"
+LOG_FILE = FACEBOOK_DIR / "Data" / "harvester.log"
 
-SEND_THREAD = None
-SEND_STATUS = "Idle"
-SEND_RESULT = None
+def is_pid_running(pid: int) -> bool:
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError, PermissionError):
+        return False
 
-LAST_CACHE_TIME = 0
-CACHED_FB_DATA = None
-CACHE_TTL_SEC = 5
+def get_running_pid():
+    if PID_FILE.exists():
+        try:
+            pid = int(PID_FILE.read_text().strip())
+            if is_pid_running(pid):
+                return pid
+        except Exception:
+            pass
+    return None
+
+def save_pid(pid: int):
+    try:
+        PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PID_FILE.write_text(str(pid))
+    except Exception:
+        pass
+
+def clear_pid():
+    if PID_FILE.exists():
+        try:
+            PID_FILE.unlink()
+        except Exception:
+            pass
 
 
 def get_postgres_conn():
@@ -287,7 +312,8 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
         clean_path = parsed.path
 
         if clean_path == "/api/status":
-            running = (FB_PROCESS is not None and FB_PROCESS.poll() is None)
+            running_pid = get_running_pid()
+            running = (running_pid is not None) or (FB_PROCESS is not None and FB_PROCESS.poll() is None)
             data = load_facebook_emails()
             data["running"] = running
             data["statusText"] = FB_STATUS if running else "System Ready"
@@ -354,7 +380,8 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
             body = {}
 
         if clean_path == "/api/start":
-            if FB_PROCESS is not None and FB_PROCESS.poll() is None:
+            running_pid = get_running_pid()
+            if (FB_PROCESS is not None and FB_PROCESS.poll() is None) or running_pid:
                 self._send_json({"error": "Harvester is already running."}, 400)
                 return
 
@@ -368,14 +395,31 @@ class FacebookAPIHandler(SimpleHTTPRequestHandler):
                 cmd.append("--dry-run")
 
             FB_STATUS = f"Running Harvester for '{niche}' (Limit {budget})..."
-            FB_PROCESS = subprocess.Popen(cmd, cwd=str(FACEBOOK_DIR))
+            LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            log_out = open(LOG_FILE, "a", encoding="utf-8")
+            FB_PROCESS = subprocess.Popen(cmd, cwd=str(FACEBOOK_DIR), stdout=log_out, stderr=log_out)
+            save_pid(FB_PROCESS.pid)
             self._send_json({"message": f"Harvester launched for '{niche}'!", "budget": budget, "niche": niche})
             return
 
         if clean_path == "/api/stop":
+            running_pid = get_running_pid()
+            stopped = False
             if FB_PROCESS is not None and FB_PROCESS.poll() is None:
                 FB_PROCESS.terminate()
-                FB_PROCESS = None
+                stopped = True
+            if running_pid:
+                try:
+                    import signal
+                    os.kill(running_pid, signal.SIGTERM)
+                except Exception:
+                    pass
+                clear_pid()
+                stopped = True
+
+            FB_PROCESS = None
+            clear_pid()
+            if stopped:
                 FB_STATUS = "Stopped by user"
                 self._send_json({"message": "Harvester stopped."})
             else:
